@@ -24,6 +24,8 @@
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.music</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSAppleEventsUsageDescription</key>

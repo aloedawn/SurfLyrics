@@ -1,0 +1,36 @@
+{
+  "fill" : {
+    "automatic-gradient" : "display-p3:0.65535,0.96783,0.74475,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "paper_3714.png.png",
+          "name" : "paper_3714.png",
+          "position" : {
+            "scale" : 1.4,
+            "translation-in-points" : [
+              -2.099999999999909,
+              23.799999999999955
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
