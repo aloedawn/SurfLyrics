@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash build.sh)",
+      "Bash(bash /Users/aloedawn/Code/spotify_swift/surflyrics/build.sh)",
+      "Bash(uuidgen)",
+      "Bash(xcodebuild -project /Users/aloedawn/Code/spotify_swift/surflyrics/SurfLyrics.xcodeproj -scheme SurfLyrics -configuration Debug build CODE_SIGN_IDENTITY=\"\" CODE_SIGNING_REQUIRED=NO)"
+    ]
+  }
+}
