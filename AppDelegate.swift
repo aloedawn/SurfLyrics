@@ -105,7 +105,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let controller = NSHostingController(rootView: SettingsView())
             let window = NSWindow(contentViewController: controller)
             window.title = "설정"
-            window.styleMask = [.titled, .closable]
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.toolbarStyle = .unified
+            let toolbar = NSToolbar(identifier: "SurfLyricsSettingsToolbar")
+            toolbar.showsBaselineSeparator = false
+            window.toolbar = toolbar
+            window.setContentSize(NSSize(width: 720, height: 440))
+            window.minSize = NSSize(width: 640, height: 380)
             window.isReleasedWhenClosed = false
             settingsWindow = window
         }
