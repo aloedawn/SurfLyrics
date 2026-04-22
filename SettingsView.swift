@@ -6,7 +6,10 @@ struct SettingsView: View {
     @AppStorage("displayMode") private var displayMode = "trackAndArtist"
     @AppStorage("maxTextLength") private var maxTextLength = 60
     @AppStorage("lyricsTransitionEnabled") private var fadeEnabled = false
+    @AppStorage("lyricsSourceLRCLIB") private var useLRCLIB = true
+    @AppStorage("lyricsSourceMusixmatch") private var useMusixmatch = true
     @State private var launchAtLogin = LaunchAtLoginManager.isEnabled()
+    @State private var musixmatchTokenExists = UserDefaults.standard.string(forKey: "musixmatch.token")?.isEmpty == false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -53,6 +56,28 @@ struct SettingsView: View {
 
             Divider()
 
+            Group {
+                Text("가사 소스")
+                    .font(.headline)
+
+                Toggle("LRCLIB (공개 API)", isOn: $useLRCLIB)
+                Toggle("Musixmatch (비공개 API)", isOn: $useMusixmatch)
+
+                if musixmatchTokenExists {
+                    LabeledRow("토큰") {
+                        Button("캐시 초기화") {
+                            UserDefaults.standard.removeObject(forKey: "musixmatch.token")
+                            UserDefaults.standard.removeObject(forKey: "musixmatch.tokenExpiry")
+                            musixmatchTokenExists = false
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.red)
+                    }
+                }
+            }
+
+            Divider()
+
             let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-"
             let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-"
             Text("버전 \(version) (\(build))")
@@ -65,6 +90,12 @@ struct SettingsView: View {
         .frame(width: 380)
         .onChange(of: displayMode) {
             NotificationCenter.default.post(name: .settingsDisplayModeChanged, object: nil)
+        }
+        .onChange(of: useLRCLIB) {
+            NotificationCenter.default.post(name: .settingsLyricsSourcesChanged, object: nil)
+        }
+        .onChange(of: useMusixmatch) {
+            NotificationCenter.default.post(name: .settingsLyricsSourcesChanged, object: nil)
         }
     }
 }

@@ -5,6 +5,7 @@ import Foundation
 
 extension Notification.Name {
     static let settingsDisplayModeChanged = Notification.Name("surflyrics.displayModeChanged")
+    static let settingsLyricsSourcesChanged = Notification.Name("surflyrics.lyricsSourcesChanged")
 }
 
 // MARK: - AppState
@@ -43,6 +44,17 @@ final class AppState {
             }
         }
 
+        NotificationCenter.default.addObserver(
+            forName: .settingsLyricsSourcesChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, let track = self.currentTrack else { return }
+                self.reloadLyrics(for: track)
+            }
+        }
+
         updateStatusBar()
         scheduleNextUpdate()
     }
@@ -69,6 +81,7 @@ final class AppState {
         Task {
             let (track, error) = await spotifyManager.getCurrentTrack()
             if let track {
+                needsAutomationPermission = false
                 track.isPlaying ? handlePlaying(track) : handlePaused()
             } else {
                 let isPermissionError = error?.contains("-1743") == true
@@ -90,12 +103,13 @@ final class AppState {
     }
 
     private func handlePlaying(_ track: SpotifyTrack) {
-        let id = "\(track.name)_\(track.artist)"
+        let id = trackIdentifier(for: track)
         currentTrack = track
         if id != currentTrackId {
             currentTrackId = id
             currentLyrics = nil
             isLoadingLyrics = false
+            updateInterval = 1.0
             loadLyrics(for: track)
         } else {
             updateDisplay(for: track, force: false)
@@ -115,13 +129,24 @@ final class AppState {
         stopTimer()
     }
 
+    private func reloadLyrics(for track: SpotifyTrack) {
+        currentLyrics = nil
+        lyricsSource = nil
+        isLoadingLyrics = false
+        currentTrackId = trackIdentifier(for: track)
+        loadLyrics(for: track)
+        scheduleNextUpdate()
+    }
+
     private func loadLyrics(for track: SpotifyTrack) {
         guard !isLoadingLyrics else { return }
         isLoadingLyrics = true
         statusText = formatTrackInfo(track)
+        let requestedTrackId = trackIdentifier(for: track)
 
         Task {
             let (lyrics, source) = await spotifyManager.getLyrics(for: track)
+            guard requestedTrackId == self.currentTrackId else { return }
             self.isLoadingLyrics = false
             self.currentLyrics = lyrics
             self.lyricsSource = source
@@ -168,5 +193,9 @@ final class AppState {
     private func truncate(_ text: String) -> String {
         let limit = { let v = UserDefaults.standard.integer(forKey: "maxTextLength"); return v > 0 ? v : 60 }()
         return text.count > limit ? String(text.prefix(limit - 3)) + "..." : text
+    }
+
+    private func trackIdentifier(for track: SpotifyTrack) -> String {
+        "\(track.name)|\(track.artist)|\(track.album)|\(track.durationMs)"
     }
 }

@@ -32,10 +32,5 @@
 	<string>Spotify의 재생 정보를 가져와 가사를 표시하기 위해 접근 권한이 필요합니다.</string>
 	<key>NSAppleScriptEnabled</key>
 	<true/>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-	</dict>
 </dict>
 </plist>

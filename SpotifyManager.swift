@@ -30,6 +30,7 @@ class SpotifyManager {
             if application id "com.spotify.client" is running then
                 tell application id "com.spotify.client"
                     if player state is playing or player state is paused then
+                        set sep to ASCII character 31
                         set stateStr to "playing"
                         if player state is paused then set stateStr to "paused"
                         set trackName to name of current track
@@ -37,7 +38,7 @@ class SpotifyManager {
                         set albumName to album of current track
                         set trackDuration to duration of current track
                         set trackPosition to player position
-                        return stateStr & "|" & trackName & "|" & artistName & "|" & albumName & "|" & trackDuration & "|" & trackPosition
+                        return stateStr & sep & trackName & sep & artistName & sep & albumName & sep & trackDuration & sep & trackPosition
                     end if
                 end tell
             end if
@@ -62,7 +63,7 @@ class SpotifyManager {
                     continuation.resume(returning: (nil, "빈 응답 (Spotify 미실행 또는 미재생)"))
                     return
                 }
-                let parts = str.components(separatedBy: "|")
+                let parts = str.components(separatedBy: "\u{1F}")
                 guard parts.count == 6 else {
                     continuation.resume(returning: (nil, "파싱 오류: \(parts.count)개"))
                     return
@@ -82,17 +83,24 @@ class SpotifyManager {
     // MARK: - Lyrics
 
     func getLyrics(for track: SpotifyTrack) async -> (Lyrics?, String?) {
-        if let lyrics = await fetchFromLRCLIB(artist: track.artist, trackName: track.name, album: track.album) {
-            return (lyrics, "LRCLIB")
+        let useLRCLIB = UserDefaults.standard.object(forKey: "lyricsSourceLRCLIB") as? Bool ?? true
+        let useMusixmatch = UserDefaults.standard.object(forKey: "lyricsSourceMusixmatch") as? Bool ?? true
+
+        if useLRCLIB {
+            if let lyrics = await fetchFromLRCLIB(artist: track.artist, trackName: track.name, album: track.album) {
+                return (lyrics, "LRCLIB")
+            }
+            if let lyrics = await fetchFromLRCLIB(artist: track.artist, trackName: track.name, album: nil) {
+                return (lyrics, "LRCLIB")
+            }
         }
-        if let lyrics = await fetchFromLRCLIB(artist: track.artist, trackName: track.name, album: nil) {
-            return (lyrics, "LRCLIB")
-        }
-        if let lyrics = await fetchFromMusixmatch(
-            artist: track.artist, trackName: track.name,
-            album: track.album, durationMs: track.durationMs
-        ) {
-            return (lyrics, "Musixmatch")
+        if useMusixmatch {
+            if let lyrics = await fetchFromMusixmatch(
+                artist: track.artist, trackName: track.name,
+                album: track.album, durationMs: track.durationMs
+            ) {
+                return (lyrics, "Musixmatch")
+            }
         }
         return (nil, nil)
     }
@@ -154,8 +162,14 @@ class SpotifyManager {
         let text = ns.substring(with: m.range(at: hasMs ? 4 : 3)).trimmingCharacters(in: .whitespaces)
         guard sec < 60, !text.isEmpty else { return nil }
         var ms = (min * 60 + sec) * 1000
-        if hasMs { ms += (Int(ns.substring(with: m.range(at: 3))) ?? 0) * 10 }
+        if hasMs { ms += fractionalMilliseconds(ns.substring(with: m.range(at: 3))) }
         return (ms, text)
+    }
+
+    private func fractionalMilliseconds(_ value: String) -> Int {
+        let digits = String(value.prefix(3))
+        let padded = digits.padding(toLength: 3, withPad: "0", startingAt: 0)
+        return Int(padded) ?? 0
     }
 
     // MARK: - Musixmatch
@@ -225,10 +239,10 @@ class SpotifyManager {
             let http = response as? HTTPURLResponse, http.statusCode == 200
         else { return nil }
 
-        return parseMusixmatch(data, trackName: trackName, artist: artist)
+        return parseMusixmatch(data, trackName: trackName, artist: artist, durationMs: durationMs)
     }
 
-    private func parseMusixmatch(_ data: Data, trackName: String, artist: String) -> Lyrics? {
+    private func parseMusixmatch(_ data: Data, trackName: String, artist: String, durationMs: Int) -> Lyrics? {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let message = json["message"] as? [String: Any],
             let body = message["body"] as? [String: Any],
@@ -240,11 +254,7 @@ class SpotifyManager {
             let mBody = mMsg["body"] as? [String: Any],
             let mTrack = mBody["track"] as? [String: Any]
         {
-            let mn = (mTrack["track_name"] as? String ?? "").lowercased()
-            let ma = (mTrack["artist_name"] as? String ?? "").lowercased()
-            let tn = trackName.lowercased()
-            let ta = artist.lowercased()
-            guard mn.contains(tn) || tn.contains(mn) || ma.contains(ta) || ta.contains(ma)
+            guard isLikelySameTrack(mTrack, trackName: trackName, artist: artist, durationMs: durationMs)
             else { return nil }
         }
 
@@ -260,5 +270,54 @@ class SpotifyManager {
             if !lines.isEmpty { return Lyrics(lines: lines) }
         }
         return nil
+    }
+
+    private func isLikelySameTrack(_ track: [String: Any], trackName: String, artist: String, durationMs: Int) -> Bool {
+        let matchedTrack = track["track_name"] as? String ?? ""
+        let matchedArtist = track["artist_name"] as? String ?? ""
+        return textMatches(matchedTrack, trackName)
+            && textMatches(matchedArtist, artist)
+            && durationMatches(track["track_length"], expectedMs: durationMs)
+    }
+
+    private func durationMatches(_ value: Any?, expectedMs: Int) -> Bool {
+        guard expectedMs > 0, let actualSeconds = numericValue(value), actualSeconds > 0 else {
+            return true
+        }
+        let expectedSeconds = Double(expectedMs) / 1000.0
+        let tolerance = max(4.0, expectedSeconds * 0.04)
+        return abs(actualSeconds - expectedSeconds) <= tolerance
+    }
+
+    private func numericValue(_ value: Any?) -> Double? {
+        switch value {
+        case let value as Double:
+            return value
+        case let value as Int:
+            return Double(value)
+        case let value as String:
+            return Double(value)
+        default:
+            return nil
+        }
+    }
+
+    private func textMatches(_ lhs: String, _ rhs: String) -> Bool {
+        let left = normalizedForMatch(lhs)
+        let right = normalizedForMatch(rhs)
+        guard !left.isEmpty, !right.isEmpty else { return false }
+        return left == right || left.contains(right) || right.contains(left)
+    }
+
+    private func normalizedForMatch(_ text: String) -> String {
+        let folded = text
+            .folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: .current)
+            .lowercased()
+        let words = folded
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { word in
+                !word.isEmpty && !["feat", "ft", "featuring"].contains(word)
+            }
+        return words.joined(separator: " ")
     }
 }

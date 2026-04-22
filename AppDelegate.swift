@@ -68,7 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
 
         let restart = NSMenuItem(title: "재시작", action: #selector(restartApp), keyEquivalent: "r")
-        restart.keyEquivalentModifierMask = [.command, .shift]
+        restart.keyEquivalentModifierMask = [.command]
         restart.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)
         restart.target = self
         menu.addItem(restart)
