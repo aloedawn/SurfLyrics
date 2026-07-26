@@ -10,8 +10,21 @@
 		0AE7A0B9A48348609DB4C8ED48E1D585 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 704B87CE326C464DB11512D1E7850791 /* main.swift */; };
 		6C7F5C39DF5D43C8B46A455A4419E517 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CCABBA69CAE4E74AB00762FEFC78A53 /* SettingsView.swift */; };
 		7F66FD6CEDF64F5DBBB53E5E06745F9F /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F56778107C4143A393528FDFAEDF4A17 /* AppState.swift */; };
+		A1000000000000000000000000000001 /* AppCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000001 /* AppCommands.swift */; };
+		A1000000000000000000000000000002 /* StatusBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000002 /* StatusBarController.swift */; };
+		A1000000000000000000000000000003 /* StatusMenuController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000003 /* StatusMenuController.swift */; };
+		A1000000000000000000000000000004 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000004 /* SettingsWindowController.swift */; };
+		A1000000000000000000000000000005 /* MusicManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000005 /* MusicManager.swift */; };
+		A1000000000000000000000000000006 /* MusicPlaybackClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000006 /* MusicPlaybackClient.swift */; };
+		A1000000000000000000000000000007 /* LyricsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000007 /* LyricsService.swift */; };
+		A1000000000000000000000000000008 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000008 /* AppPreferences.swift */; };
+		A1000000000000000000000000000009 /* StatusTextFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000009 /* StatusTextFormatter.swift */; };
+		A1000000000000000000000000000010 /* SettingsPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000010 /* SettingsPanes.swift */; };
+		A1000000000000000000000000000011 /* LaunchAtLoginManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000011 /* LaunchAtLoginManager.swift */; };
+		A1000000000000000000000000000012 /* LRCLIBClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000012 /* LRCLIBClient.swift */; };
+		A1000000000000000000000000000013 /* LRCParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000013 /* LRCParser.swift */; };
+		A1000000000000000000000000000014 /* MusixmatchClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000014 /* MusixmatchClient.swift */; };
 		D371EDAE7663465A9B8CE83911EA10F8 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BEF4BA3BB8E498C8FCE8ADC8AC75ED2 /* Models.swift */; };
-		E013F29787984C078B801C436E06F73B /* SpotifyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6D1E392B97644728BC13F464E288496 /* SpotifyManager.swift */; };
 		E4ED22681B2C4FA987645742EB4C8CE3 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FA10487D3904638AF1FCCE0E4078893 /* AppDelegate.swift */; };
 		FE3959613ADA463C81851307C3C757C1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DADD9C9EEB1447E78D1BABF80F6CE56C /* Assets.xcassets */; };
 /* End PBXBuildFile section */
@@ -23,8 +36,21 @@
 		704B87CE326C464DB11512D1E7850791 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		7FA10487D3904638AF1FCCE0E4078893 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		8634CC9B2F866BB2008DDC84 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
+		B1000000000000000000000000000001 /* AppCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCommands.swift; sourceTree = "<group>"; };
+		B1000000000000000000000000000002 /* StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarController.swift; sourceTree = "<group>"; };
+		B1000000000000000000000000000003 /* StatusMenuController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusMenuController.swift; sourceTree = "<group>"; };
+		B1000000000000000000000000000004 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
+		B1000000000000000000000000000005 /* MusicManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicManager.swift; sourceTree = "<group>"; };
+		B1000000000000000000000000000006 /* MusicPlaybackClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicPlaybackClient.swift; sourceTree = "<group>"; };
+		B1000000000000000000000000000007 /* LyricsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsService.swift; sourceTree = "<group>"; };
+		B1000000000000000000000000000008 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
+		B1000000000000000000000000000009 /* StatusTextFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusTextFormatter.swift; sourceTree = "<group>"; };
+		B1000000000000000000000000000010 /* SettingsPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPanes.swift; sourceTree = "<group>"; };
+		B1000000000000000000000000000011 /* LaunchAtLoginManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginManager.swift; sourceTree = "<group>"; };
+		B1000000000000000000000000000012 /* LRCLIBClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LRCLIBClient.swift; sourceTree = "<group>"; };
+		B1000000000000000000000000000013 /* LRCParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LRCParser.swift; sourceTree = "<group>"; };
+		B1000000000000000000000000000014 /* MusixmatchClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusixmatchClient.swift; sourceTree = "<group>"; };
 		BB110C47FEF24266A779780152D7E088 /* SurfLyrics.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SurfLyrics.entitlements; sourceTree = "<group>"; };
-		D6D1E392B97644728BC13F464E288496 /* SpotifyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyManager.swift; sourceTree = "<group>"; };
 		DADD9C9EEB1447E78D1BABF80F6CE56C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E53C2666B0404433B780B7985925AD2D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F56778107C4143A393528FDFAEDF4A17 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
@@ -36,10 +62,23 @@
 			children = (
 				704B87CE326C464DB11512D1E7850791 /* main.swift */,
 				7FA10487D3904638AF1FCCE0E4078893 /* AppDelegate.swift */,
+				B1000000000000000000000000000001 /* AppCommands.swift */,
+				B1000000000000000000000000000008 /* AppPreferences.swift */,
 				F56778107C4143A393528FDFAEDF4A17 /* AppState.swift */,
+				B1000000000000000000000000000002 /* StatusBarController.swift */,
+				B1000000000000000000000000000009 /* StatusTextFormatter.swift */,
+				B1000000000000000000000000000003 /* StatusMenuController.swift */,
+				B1000000000000000000000000000004 /* SettingsWindowController.swift */,
 				4CCABBA69CAE4E74AB00762FEFC78A53 /* SettingsView.swift */,
+				B1000000000000000000000000000010 /* SettingsPanes.swift */,
 				1BEF4BA3BB8E498C8FCE8ADC8AC75ED2 /* Models.swift */,
-				D6D1E392B97644728BC13F464E288496 /* SpotifyManager.swift */,
+				B1000000000000000000000000000011 /* LaunchAtLoginManager.swift */,
+				B1000000000000000000000000000005 /* MusicManager.swift */,
+				B1000000000000000000000000000006 /* MusicPlaybackClient.swift */,
+				B1000000000000000000000000000007 /* LyricsService.swift */,
+				B1000000000000000000000000000012 /* LRCLIBClient.swift */,
+				B1000000000000000000000000000013 /* LRCParser.swift */,
+				B1000000000000000000000000000014 /* MusixmatchClient.swift */,
 				E53C2666B0404433B780B7985925AD2D /* Info.plist */,
 				BB110C47FEF24266A779780152D7E088 /* SurfLyrics.entitlements */,
 				DADD9C9EEB1447E78D1BABF80F6CE56C /* Assets.xcassets */,
@@ -83,7 +122,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1600;
-				LastUpgradeCheck = 2640;
+				LastUpgradeCheck = 2650;
 				TargetAttributes = {
 					7A21C546512A4F468CA93ACDF12DFA36 = {
 						CreatedOnToolsVersion = 16.0;
@@ -126,10 +165,23 @@
 			files = (
 				0AE7A0B9A48348609DB4C8ED48E1D585 /* main.swift in Sources */,
 				E4ED22681B2C4FA987645742EB4C8CE3 /* AppDelegate.swift in Sources */,
+				A1000000000000000000000000000001 /* AppCommands.swift in Sources */,
+				A1000000000000000000000000000008 /* AppPreferences.swift in Sources */,
 				7F66FD6CEDF64F5DBBB53E5E06745F9F /* AppState.swift in Sources */,
+				A1000000000000000000000000000002 /* StatusBarController.swift in Sources */,
+				A1000000000000000000000000000009 /* StatusTextFormatter.swift in Sources */,
+				A1000000000000000000000000000003 /* StatusMenuController.swift in Sources */,
+				A1000000000000000000000000000004 /* SettingsWindowController.swift in Sources */,
 				6C7F5C39DF5D43C8B46A455A4419E517 /* SettingsView.swift in Sources */,
+				A1000000000000000000000000000010 /* SettingsPanes.swift in Sources */,
 				D371EDAE7663465A9B8CE83911EA10F8 /* Models.swift in Sources */,
-				E013F29787984C078B801C436E06F73B /* SpotifyManager.swift in Sources */,
+				A1000000000000000000000000000011 /* LaunchAtLoginManager.swift in Sources */,
+				A1000000000000000000000000000005 /* MusicManager.swift in Sources */,
+				A1000000000000000000000000000006 /* MusicPlaybackClient.swift in Sources */,
+				A1000000000000000000000000000007 /* LyricsService.swift in Sources */,
+				A1000000000000000000000000000012 /* LRCLIBClient.swift in Sources */,
+				A1000000000000000000000000000013 /* LRCParser.swift in Sources */,
+				A1000000000000000000000000000014 /* MusixmatchClient.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -139,25 +191,27 @@
 		397DD0248AB945138DAC7E0531348575 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				AUTOMATION_APPLE_EVENTS = YES;
 				CODE_SIGN_ENTITLEMENTS = SurfLyrics.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 260422.02;
+				CURRENT_PROJECT_VERSION = 260711.01;
 				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 2RDF6J3XVV;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SurfLyrics;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0.2;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aloedawn.surflyrics;
 				PRODUCT_NAME = SurfLyrics;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
@@ -165,7 +219,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -211,7 +264,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -224,7 +277,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -276,7 +328,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -290,25 +342,27 @@
 		E650B5FCCBC94AC783BB0BEC2D30A3C5 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				AUTOMATION_APPLE_EVENTS = YES;
 				CODE_SIGN_ENTITLEMENTS = SurfLyrics.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 260422.02;
+				CURRENT_PROJECT_VERSION = 260711.01;
 				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 2RDF6J3XVV;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SurfLyrics;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0.2;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aloedawn.surflyrics;
 				PRODUCT_NAME = SurfLyrics;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
