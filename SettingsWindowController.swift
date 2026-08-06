@@ -20,7 +20,7 @@ final class SettingsWindowController {
         let window = NSWindow(contentViewController: controller)
         window.title = "설정"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-        window.titleVisibility = .hidden
+        window.titleVisibility = .visible
         window.titlebarAppearsTransparent = true
         window.toolbarStyle = .unified
         window.toolbar = NSToolbar(identifier: "SurfLyricsSettingsToolbar")
