@@ -60,6 +60,14 @@
 		CCEBB8D52C1C442FBF8EE6B16D96C613 = {
 			isa = PBXGroup;
 			children = (
+				C1000000000000000000000000000001 /* SurfLyrics */,
+				CDC1E08EA11240A7B28808409BEAD855 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		C1000000000000000000000000000001 /* SurfLyrics */ = {
+			isa = PBXGroup;
+			children = (
 				704B87CE326C464DB11512D1E7850791 /* main.swift */,
 				7FA10487D3904638AF1FCCE0E4078893 /* AppDelegate.swift */,
 				B1000000000000000000000000000001 /* AppCommands.swift */,
@@ -83,8 +91,8 @@
 				BB110C47FEF24266A779780152D7E088 /* SurfLyrics.entitlements */,
 				DADD9C9EEB1447E78D1BABF80F6CE56C /* Assets.xcassets */,
 				8634CC9B2F866BB2008DDC84 /* AppIcon.icon */,
-				CDC1E08EA11240A7B28808409BEAD855 /* Products */,
 			);
+			path = SurfLyrics;
 			sourceTree = "<group>";
 		};
 		CDC1E08EA11240A7B28808409BEAD855 /* Products */ = {
@@ -195,7 +203,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				AUTOMATION_APPLE_EVENTS = YES;
-				CODE_SIGN_ENTITLEMENTS = SurfLyrics.entitlements;
+				CODE_SIGN_ENTITLEMENTS = SurfLyrics/SurfLyrics.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 260711.01;
@@ -203,7 +211,7 @@
 				DEVELOPMENT_TEAM = 2RDF6J3XVV;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
-				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_FILE = SurfLyrics/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SurfLyrics;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
@@ -346,7 +354,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				AUTOMATION_APPLE_EVENTS = YES;
-				CODE_SIGN_ENTITLEMENTS = SurfLyrics.entitlements;
+				CODE_SIGN_ENTITLEMENTS = SurfLyrics/SurfLyrics.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 260711.01;
@@ -354,7 +362,7 @@
 				DEVELOPMENT_TEAM = 2RDF6J3XVV;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
-				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_FILE = SurfLyrics/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SurfLyrics;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
