@@ -7,6 +7,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settingsWindowController = SettingsWindowController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else {
+            return
+        }
+
         let preferences = AppPreferences()
         let appState = AppState(preferences: preferences)
         self.appState = appState
@@ -22,5 +26,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 terminateApp: AppCommands.terminateApp
             )
         )
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        appState?.shutdown()
     }
 }

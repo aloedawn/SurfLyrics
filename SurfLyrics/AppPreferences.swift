@@ -11,7 +11,7 @@ enum AppPreferenceKey {
     fileprivate static let musixmatchTokenExpiry = "musixmatch.tokenExpiry"
 }
 
-enum DisplayMode: String, CaseIterable, Sendable {
+enum DisplayMode: String, Sendable {
     case trackAndArtist
     case trackOnly
     case artistOnly

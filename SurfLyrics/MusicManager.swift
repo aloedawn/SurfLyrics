@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 protocol MusicManaging: AnyObject {
-    func getCurrentTrack() async -> MusicPlaybackResult
+    func getCurrentTrack(preferredPlayer: MusicPlayer?) async -> MusicPlaybackResult
     func getLyrics(for track: MusicTrack) async -> (Lyrics?, String?)
 }
 
@@ -20,8 +20,8 @@ final class MusicManager: MusicManaging {
         self.lyricsService = lyricsService ?? LyricsService(preferences: preferences)
     }
 
-    func getCurrentTrack() async -> MusicPlaybackResult {
-        await playbackClient.getCurrentTrack()
+    func getCurrentTrack(preferredPlayer: MusicPlayer?) async -> MusicPlaybackResult {
+        await playbackClient.getCurrentTrack(preferredPlayer: preferredPlayer)
     }
 
     func getLyrics(for track: MusicTrack) async -> (Lyrics?, String?) {

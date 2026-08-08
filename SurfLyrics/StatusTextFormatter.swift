@@ -21,10 +21,6 @@ struct StatusTextFormatter {
         return "재생 앱: \(track.source.displayName)"
     }
 
-    func identifier(for track: MusicTrack) -> String {
-        "\(track.source.rawValue)|\(track.name)|\(track.artist)|\(track.album)|\(track.durationMs)"
-    }
-
     private func trackDescription(for track: MusicTrack) -> String {
         let text: String
         switch preferences.displayMode {

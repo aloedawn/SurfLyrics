@@ -7,6 +7,7 @@ final class StatusBarController {
     private let menuController: StatusMenuController
     private let preferences: AppPreferences
     private var cancellables = Set<AnyCancellable>()
+    private var transitionGeneration = 0
 
     init(
         appState: AppState,
@@ -26,15 +27,15 @@ final class StatusBarController {
     }
 
     private func bind(to appState: AppState) {
-        appState.$statusText.sink { [weak self] text in
+        appState.$statusText.removeDuplicates().sink { [weak self] text in
             self?.updateLabel(text)
         }.store(in: &cancellables)
 
-        appState.$sourceText.sink { [weak self] source in
+        appState.$sourceText.removeDuplicates().sink { [weak self] source in
             self?.menuController.updateSourceItem(source)
         }.store(in: &cancellables)
 
-        appState.$needsAutomationPermission.sink { [weak self] needs in
+        appState.$needsAutomationPermission.removeDuplicates().sink { [weak self] needs in
             self?.menuController.updatePermissionItem(needs)
         }.store(in: &cancellables)
     }
@@ -42,6 +43,8 @@ final class StatusBarController {
     private func updateLabel(_ text: String) {
         guard let button = statusItem.button else { return }
         guard button.title != text else { return }
+        transitionGeneration += 1
+        let generation = transitionGeneration
 
         if preferences.lyricsTransitionEnabled {
             NSAnimationContext.runAnimationGroup({ context in
@@ -49,7 +52,7 @@ final class StatusBarController {
                 button.animator().alphaValue = 0
             }, completionHandler: { [weak self] in
                 Task { @MainActor [weak self] in
-                    self?.completeFade(to: text)
+                    self?.completeFade(to: text, generation: generation)
                 }
             })
         } else {
@@ -58,7 +61,8 @@ final class StatusBarController {
         }
     }
 
-    private func completeFade(to text: String) {
+    private func completeFade(to text: String, generation: Int) {
+        guard generation == transitionGeneration else { return }
         guard let button = statusItem.button else { return }
         button.title = text
         NSAnimationContext.runAnimationGroup { context in

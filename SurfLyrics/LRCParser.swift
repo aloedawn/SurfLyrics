@@ -1,6 +1,5 @@
 import Foundation
 
-@MainActor
 enum LRCParser {
     private static let regexes: [(expression: NSRegularExpression, hasFraction: Bool)] = {
         [
@@ -14,8 +13,8 @@ enum LRCParser {
         }
     }()
 
-    static func parse(_ lrc: String) -> [(timeMs: Int, text: String)] {
-        var lines: [(timeMs: Int, text: String)] = []
+    static func parse(_ lrc: String) -> [LyricsLine] {
+        var lines: [LyricsLine] = []
         for line in lrc.components(separatedBy: .newlines) {
             for regex in regexes {
                 if let parsed = parseLine(
@@ -35,7 +34,7 @@ enum LRCParser {
         _ line: String,
         expression: NSRegularExpression,
         hasFraction: Bool
-    ) -> (timeMs: Int, text: String)? {
+    ) -> LyricsLine? {
         let nsLine = line as NSString
         guard let match = expression.firstMatch(
             in: line,
@@ -57,7 +56,7 @@ enum LRCParser {
                 nsLine.substring(with: match.range(at: 3))
             )
         }
-        return (milliseconds, text)
+        return LyricsLine(timeMs: milliseconds, text: text)
     }
 
     private static func fractionalMilliseconds(_ value: String) -> Int {

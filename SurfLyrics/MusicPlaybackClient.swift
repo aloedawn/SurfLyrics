@@ -1,29 +1,69 @@
 import AppKit
 import Foundation
+import os
+
+enum TrackProbeResult: Sendable {
+    case track(MusicTrack)
+    case inactive
+    case permissionDenied(String)
+    case failure(String)
+}
+
+@MainActor
+protocol MusicPlayerProbing: AnyObject {
+    func runningPlayers() -> Set<MusicPlayer>
+    func probe(_ player: MusicPlayer) async -> TrackProbeResult
+}
 
 @MainActor
 final class MusicPlaybackClient {
-    func getCurrentTrack() async -> MusicPlaybackResult {
-        var results: [TrackProbeResult] = []
-        for player in MusicPlayer.allCases {
-            results.append(await getCurrentTrack(from: player))
+    private let playerProbe: any MusicPlayerProbing
+    private let signposter = OSSignposter(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.aloedawn.surflyrics",
+        category: "Playback"
+    )
+
+    init(playerProbe: (any MusicPlayerProbing)? = nil) {
+        self.playerProbe = playerProbe ?? AppleScriptPlayerProbe()
+    }
+
+    func getCurrentTrack(preferredPlayer: MusicPlayer?) async -> MusicPlaybackResult {
+        let runningPlayers = playerProbe.runningPlayers()
+        guard !runningPlayers.isEmpty else {
+            return MusicPlaybackResult(
+                track: nil,
+                issue: .unavailable("지원 음악 앱 미실행")
+            )
         }
 
-        let tracks = results.compactMap { result -> MusicTrack? in
-            if case let .track(track) = result { return track }
-            return nil
+        let orderedPlayers = orderedPlayers(preferredPlayer: preferredPlayer)
+        var pausedTrack: MusicTrack?
+        var permissionErrors: [String] = []
+        var failures: [String] = []
+
+        for player in orderedPlayers where runningPlayers.contains(player) {
+            let interval = signposter.beginInterval("PlayerProbe")
+            let result = await playerProbe.probe(player)
+            signposter.endInterval("PlayerProbe", interval)
+
+            switch result {
+            case let .track(track) where track.isPlaying:
+                return MusicPlaybackResult(track: track, issue: nil)
+            case let .track(track):
+                pausedTrack = pausedTrack ?? track
+            case .inactive:
+                break
+            case let .permissionDenied(message):
+                permissionErrors.append(message)
+            case let .failure(message):
+                failures.append(message)
+            }
         }
-        if let playing = tracks.first(where: \.isPlaying) {
-            return MusicPlaybackResult(track: playing, issue: nil)
-        }
-        if let paused = tracks.first {
+
+        if let paused = pausedTrack {
             return MusicPlaybackResult(track: paused, issue: nil)
         }
 
-        let permissionErrors = results.compactMap { result -> String? in
-            if case let .permissionDenied(message) = result { return message }
-            return nil
-        }
         if !permissionErrors.isEmpty {
             return MusicPlaybackResult(
                 track: nil,
@@ -31,31 +71,84 @@ final class MusicPlaybackClient {
             )
         }
 
-        let failures = results.compactMap { result -> String? in
-            if case let .failure(message) = result { return message }
-            return nil
-        }
         return MusicPlaybackResult(
             track: nil,
             issue: .unavailable(failures.first ?? "빈 응답 (지원 음악 앱 미실행 또는 미재생)")
         )
     }
 
-    private enum TrackProbeResult: Sendable {
-        case track(MusicTrack)
-        case inactive
-        case permissionDenied(String)
-        case failure(String)
+    private func orderedPlayers(preferredPlayer: MusicPlayer?) -> [MusicPlayer] {
+        guard let preferredPlayer else { return MusicPlayer.allCases }
+        return [preferredPlayer] + MusicPlayer.allCases.filter { $0 != preferredPlayer }
+    }
+}
+
+@MainActor
+final class AppleScriptPlayerProbe: MusicPlayerProbing {
+    private let worker = AppleScriptProbeWorker()
+
+    func runningPlayers() -> Set<MusicPlayer> {
+        Set(MusicPlayer.allCases.filter { player in
+            !NSRunningApplication.runningApplications(
+                withBundleIdentifier: player.bundleIdentifier
+            ).isEmpty
+        })
     }
 
-    private func getCurrentTrack(from player: MusicPlayer) async -> TrackProbeResult {
+    func probe(_ player: MusicPlayer) async -> TrackProbeResult {
         let script = currentTrackScript(for: player)
+        return await worker.probe(player: player, source: script)
+    }
+
+    private func currentTrackScript(for player: MusicPlayer) -> String {
+        """
+        if application id "\(player.bundleIdentifier)" is running then
+            tell application id "\(player.bundleIdentifier)"
+                if player state is playing or player state is paused then
+                    set sep to ASCII character 31
+                    set stateStr to "playing"
+                    if player state is paused then set stateStr to "paused"
+                    set trackName to ""
+                    set artistName to ""
+                    set albumName to ""
+                    set trackDuration to 0
+                    set trackPosition to 0
+                    try
+                        set trackName to name of current track as text
+                    end try
+                    try
+                        set artistName to artist of current track as text
+                    end try
+                    try
+                        set albumName to album of current track as text
+                    end try
+                    try
+                        set trackDuration to duration of current track
+                    end try
+                    try
+                        set trackPosition to player position
+                    end try
+                    return stateStr & sep & trackName & sep & artistName & sep & albumName & sep & trackDuration & sep & trackPosition
+                end if
+            end tell
+        end if
+        return ""
+        """
+    }
+}
+
+private final class AppleScriptProbeWorker: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "com.aloedawn.surflyrics.playback-probe", qos: .utility)
+    private var scripts: [MusicPlayer: NSAppleScript] = [:]
+
+    func probe(player: MusicPlayer, source: String) async -> TrackProbeResult {
         return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                guard let appleScript = NSAppleScript(source: script) else {
+            queue.async { [self] in
+                guard let appleScript = compiledScript(for: player, source: source) else {
                     continuation.resume(returning: .failure("\(player.displayName) 스크립트 생성 실패"))
                     return
                 }
+
                 var error: NSDictionary?
                 let result = appleScript.executeAndReturnError(&error)
                 if let error {
@@ -95,39 +188,15 @@ final class MusicPlaybackClient {
         }
     }
 
-    private func currentTrackScript(for player: MusicPlayer) -> String {
-        """
-        if application id "\(player.bundleIdentifier)" is running then
-            tell application id "\(player.bundleIdentifier)"
-                if player state is playing or player state is paused then
-                    set sep to ASCII character 31
-                    set stateStr to "playing"
-                    if player state is paused then set stateStr to "paused"
-                    set trackName to ""
-                    set artistName to ""
-                    set albumName to ""
-                    set trackDuration to 0
-                    set trackPosition to 0
-                    try
-                        set trackName to name of current track as text
-                    end try
-                    try
-                        set artistName to artist of current track as text
-                    end try
-                    try
-                        set albumName to album of current track as text
-                    end try
-                    try
-                        set trackDuration to duration of current track
-                    end try
-                    try
-                        set trackPosition to player position
-                    end try
-                    return stateStr & sep & trackName & sep & artistName & sep & albumName & sep & trackDuration & sep & trackPosition
-                end if
-            end tell
-        end if
-        return ""
-        """
+    private func compiledScript(for player: MusicPlayer, source: String) -> NSAppleScript? {
+        if let script = scripts[player] {
+            return script
+        }
+
+        guard let script = NSAppleScript(source: source) else { return nil }
+        var error: NSDictionary?
+        guard script.compileAndReturnError(&error) else { return nil }
+        scripts[player] = script
+        return script
     }
 }

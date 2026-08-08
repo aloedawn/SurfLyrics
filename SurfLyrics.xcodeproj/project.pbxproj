@@ -25,9 +25,22 @@
 		A1000000000000000000000000000013 /* LRCParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000013 /* LRCParser.swift */; };
 		A1000000000000000000000000000014 /* MusixmatchClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000014 /* MusixmatchClient.swift */; };
 		D371EDAE7663465A9B8CE83911EA10F8 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BEF4BA3BB8E498C8FCE8ADC8AC75ED2 /* Models.swift */; };
+		D2000000000000000000000000000001 /* ModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3000000000000000000000000000001 /* ModelTests.swift */; };
+		D2000000000000000000000000000002 /* PlaybackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3000000000000000000000000000002 /* PlaybackTests.swift */; };
+		D2000000000000000000000000000003 /* LyricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3000000000000000000000000000003 /* LyricsTests.swift */; };
 		E4ED22681B2C4FA987645742EB4C8CE3 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FA10487D3904638AF1FCCE0E4078893 /* AppDelegate.swift */; };
 		FE3959613ADA463C81851307C3C757C1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DADD9C9EEB1447E78D1BABF80F6CE56C /* Assets.xcassets */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D4000000000000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EE735F716AE94DFAA31421B1D994F725 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7A21C546512A4F468CA93ACDF12DFA36;
+			remoteInfo = SurfLyrics;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		1BEF4BA3BB8E498C8FCE8ADC8AC75ED2 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -52,15 +65,30 @@
 		B1000000000000000000000000000014 /* MusixmatchClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusixmatchClient.swift; sourceTree = "<group>"; };
 		BB110C47FEF24266A779780152D7E088 /* SurfLyrics.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SurfLyrics.entitlements; sourceTree = "<group>"; };
 		DADD9C9EEB1447E78D1BABF80F6CE56C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		D3000000000000000000000000000001 /* ModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelTests.swift; sourceTree = "<group>"; };
+		D3000000000000000000000000000002 /* PlaybackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackTests.swift; sourceTree = "<group>"; };
+		D3000000000000000000000000000003 /* LyricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsTests.swift; sourceTree = "<group>"; };
+		D3000000000000000000000000000004 /* SurfLyricsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SurfLyricsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E53C2666B0404433B780B7985925AD2D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F56778107C4143A393528FDFAEDF4A17 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D5000000000000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		CCEBB8D52C1C442FBF8EE6B16D96C613 = {
 			isa = PBXGroup;
 			children = (
 				C1000000000000000000000000000001 /* SurfLyrics */,
+				D6000000000000000000000000000001 /* SurfLyricsTests */,
 				CDC1E08EA11240A7B28808409BEAD855 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -95,10 +123,21 @@
 			path = SurfLyrics;
 			sourceTree = "<group>";
 		};
+		D6000000000000000000000000000001 /* SurfLyricsTests */ = {
+			isa = PBXGroup;
+			children = (
+				D3000000000000000000000000000001 /* ModelTests.swift */,
+				D3000000000000000000000000000002 /* PlaybackTests.swift */,
+				D3000000000000000000000000000003 /* LyricsTests.swift */,
+			);
+			path = SurfLyricsTests;
+			sourceTree = "<group>";
+		};
 		CDC1E08EA11240A7B28808409BEAD855 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				50833023DB09407181EB4AFA51C0A17C /* SurfLyrics.app */,
+				D3000000000000000000000000000004 /* SurfLyricsTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -122,6 +161,23 @@
 			productReference = 50833023DB09407181EB4AFA51C0A17C /* SurfLyrics.app */;
 			productType = "com.apple.product-type.application";
 		};
+		D7000000000000000000000000000001 /* SurfLyricsTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D8000000000000000000000000000001 /* Build configuration list for PBXNativeTarget "SurfLyricsTests" */;
+			buildPhases = (
+				D9000000000000000000000000000001 /* Sources */,
+				D5000000000000000000000000000001 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DA000000000000000000000000000001 /* PBXTargetDependency */,
+			);
+			name = SurfLyricsTests;
+			productName = SurfLyricsTests;
+			productReference = D3000000000000000000000000000004 /* SurfLyricsTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -134,6 +190,10 @@
 				TargetAttributes = {
 					7A21C546512A4F468CA93ACDF12DFA36 = {
 						CreatedOnToolsVersion = 16.0;
+					};
+					D7000000000000000000000000000001 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = 7A21C546512A4F468CA93ACDF12DFA36;
 					};
 				};
 			};
@@ -151,6 +211,7 @@
 			projectRoot = "";
 			targets = (
 				7A21C546512A4F468CA93ACDF12DFA36 /* SurfLyrics */,
+				D7000000000000000000000000000001 /* SurfLyricsTests */,
 			);
 		};
 /* End PBXProject section */
@@ -193,7 +254,25 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D9000000000000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D2000000000000000000000000000001 /* ModelTests.swift in Sources */,
+				D2000000000000000000000000000002 /* PlaybackTests.swift in Sources */,
+				D2000000000000000000000000000003 /* LyricsTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		DA000000000000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7A21C546512A4F468CA93ACDF12DFA36 /* SurfLyrics */;
+			targetProxy = D4000000000000000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		397DD0248AB945138DAC7E0531348575 /* Debug */ = {
@@ -213,7 +292,6 @@
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				INFOPLIST_FILE = SurfLyrics/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SurfLyrics;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
 				MARKETING_VERSION = 1.1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aloedawn.surflyrics;
@@ -364,13 +442,44 @@
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				INFOPLIST_FILE = SurfLyrics/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SurfLyrics;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
 				MARKETING_VERSION = 1.1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aloedawn.surflyrics;
 				PRODUCT_NAME = SurfLyrics;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		DB000000000000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 2RDF6J3XVV;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aloedawn.surflyrics.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SurfLyrics.app/Contents/MacOS/SurfLyrics";
+			};
+			name = Debug;
+		};
+		DB000000000000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 2RDF6J3XVV;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aloedawn.surflyrics.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SurfLyrics.app/Contents/MacOS/SurfLyrics";
 			};
 			name = Release;
 		};
@@ -391,6 +500,15 @@
 			buildConfigurations = (
 				8D9F530AA7B74791B47D86DEFEDCBE93 /* Debug */,
 				54BC305AABC241F7BECB58FD708C3B56 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D8000000000000000000000000000001 /* Build configuration list for PBXNativeTarget "SurfLyricsTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DB000000000000000000000000000001 /* Debug */,
+				DB000000000000000000000000000002 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

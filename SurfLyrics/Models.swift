@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - MusicPlayer
 
-enum MusicPlayer: String, Codable, CaseIterable, Sendable {
+enum MusicPlayer: String, CaseIterable, Sendable {
     case spotify
     case appleMusic
 
@@ -42,7 +42,15 @@ enum MusicPlayer: String, Codable, CaseIterable, Sendable {
 
 // MARK: - MusicTrack
 
-struct MusicTrack: Codable, Sendable {
+struct TrackIdentity: Hashable, Sendable {
+    let source: MusicPlayer
+    let name: String
+    let artist: String
+    let album: String
+    let durationMs: Int
+}
+
+struct MusicTrack: Equatable, Sendable {
     let source: MusicPlayer
     let name: String
     let artist: String
@@ -50,6 +58,16 @@ struct MusicTrack: Codable, Sendable {
     let durationMs: Int
     let progressMs: Int
     let isPlaying: Bool
+
+    var identity: TrackIdentity {
+        TrackIdentity(
+            source: source,
+            name: name,
+            artist: artist,
+            album: album,
+            durationMs: durationMs
+        )
+    }
 }
 
 // MARK: - MusicPlaybackResult
@@ -71,14 +89,35 @@ enum MusicPlaybackIssue: Sendable {
 
 // MARK: - Lyrics
 
-struct Lyrics: Sendable {
-    let lines: [(timeMs: Int, text: String)]
+struct LyricsLine: Equatable, Sendable {
+    let timeMs: Int
+    let text: String
+}
 
-    func currentLine(at progressMs: Int) -> String? {
-        lines.last(where: { $0.timeMs <= progressMs })?.text
-    }
+struct LyricsLookup: Equatable, Sendable {
+    let currentText: String?
+    let nextLineTimeMs: Int?
+}
 
-    func nextLineTime(after progressMs: Int) -> Int? {
-        lines.first(where: { $0.timeMs > progressMs })?.timeMs
+struct Lyrics: Equatable, Sendable {
+    let lines: [LyricsLine]
+
+    func lookup(at progressMs: Int) -> LyricsLookup {
+        var lowerBound = 0
+        var upperBound = lines.count
+
+        while lowerBound < upperBound {
+            let middle = lowerBound + (upperBound - lowerBound) / 2
+            if lines[middle].timeMs <= progressMs {
+                lowerBound = middle + 1
+            } else {
+                upperBound = middle
+            }
+        }
+
+        return LyricsLookup(
+            currentText: lowerBound > 0 ? lines[lowerBound - 1].text : nil,
+            nextLineTimeMs: lowerBound < lines.count ? lines[lowerBound].timeMs : nil
+        )
     }
 }

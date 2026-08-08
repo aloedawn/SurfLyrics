@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 @MainActor
 final class MusixmatchClient {
@@ -6,18 +7,25 @@ final class MusixmatchClient {
 
     private let preferences: AppPreferences
     private let urlSession: URLSession
+    private let decoder: LyricsPayloadDecoder
+    private let logger = Logger(subsystem: "com.aloedawn.surflyrics", category: "Musixmatch")
     private var token: String?
     private var tokenExpiry: Date?
 
-    init(preferences: AppPreferences, urlSession: URLSession) {
+    init(
+        preferences: AppPreferences,
+        urlSession: URLSession,
+        decoder: LyricsPayloadDecoder
+    ) {
         self.preferences = preferences
         self.urlSession = urlSession
+        self.decoder = decoder
         token = preferences.musixmatchToken
         tokenExpiry = preferences.musixmatchTokenExpiry
     }
 
-    func fetch(for track: MusicTrack) async -> Lyrics? {
-        guard let token = await validToken() else { return nil }
+    func fetch(for track: MusicTrack) async -> LyricsFetchResult {
+        guard let token = await validToken() else { return .transientFailure }
 
         var components = URLComponents(
             string: "https://apic-desktop.musixmatch.com/ws/1.1/macro.subtitles.get"
@@ -33,20 +41,32 @@ final class MusixmatchClient {
             URLQueryItem(name: "usertoken", value: token),
             URLQueryItem(name: "app_id", value: "web-desktop-app-v1.0"),
         ]
-        guard let url = components.url else { return nil }
+        guard let url = components.url else { return .transientFailure }
 
         var request = URLRequest(url: url)
+        request.cachePolicy = .useProtocolCachePolicy
         request.timeoutInterval = 10.0
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
 
-        guard let (data, response) = try? await urlSession.data(for: request),
-            let httpResponse = response as? HTTPURLResponse,
-            httpResponse.statusCode == 200
-        else {
-            return nil
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                return .transientFailure
+            }
+            if httpResponse.statusCode == 404 {
+                return .notFound
+            }
+            guard httpResponse.statusCode == 200 else {
+                logger.error("Musixmatch returned a non-success status")
+                return .transientFailure
+            }
+            return await decoder.decodeMusixmatch(data, expectedTrack: track)
+        } catch {
+            if !Task.isCancelled {
+                logger.error("Musixmatch request failed")
+            }
+            return .transientFailure
         }
-
-        return parseResponse(data, for: track)
     }
 
     private func validToken() async -> String? {
@@ -64,117 +84,30 @@ final class MusixmatchClient {
         }
 
         var request = URLRequest(url: url)
+        request.cachePolicy = .useProtocolCachePolicy
         request.timeoutInterval = 10.0
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
 
-        guard let (data, response) = try? await urlSession.data(for: request),
-            let httpResponse = response as? HTTPURLResponse,
-            httpResponse.statusCode == 200,
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let message = json["message"] as? [String: Any],
-            let body = message["body"] as? [String: Any],
-            let token = body["user_token"] as? String
-        else {
-            return nil
-        }
-
-        let expiry = Date().addingTimeInterval(3600)
-        self.token = token
-        tokenExpiry = expiry
-        preferences.storeMusixmatchToken(token, expiresAt: expiry)
-        return token
-    }
-
-    private func parseResponse(_ data: Data, for track: MusicTrack) -> Lyrics? {
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let message = json["message"] as? [String: Any],
-            let body = message["body"] as? [String: Any],
-            let macroCalls = body["macro_calls"] as? [String: Any]
-        else {
-            return nil
-        }
-
-        if let matchedTrack = matchedTrack(from: macroCalls),
-            !isLikelySameTrack(matchedTrack, expected: track)
-        {
-            return nil
-        }
-
-        guard let subtitles = macroCalls["track.subtitles.get"] as? [String: Any],
-            let subtitleMessage = subtitles["message"] as? [String: Any],
-            let subtitleBody = subtitleMessage["body"] as? [String: Any],
-            let list = subtitleBody["subtitle_list"] as? [[String: Any]],
-            let first = list.first,
-            let subtitle = first["subtitle"] as? [String: Any],
-            let lrc = subtitle["subtitle_body"] as? String,
-            !lrc.isEmpty
-        else {
-            return nil
-        }
-
-        let lines = LRCParser.parse(lrc)
-        return lines.isEmpty ? nil : Lyrics(lines: lines)
-    }
-
-    private func matchedTrack(from macroCalls: [String: Any]) -> [String: Any]? {
-        guard let matcher = macroCalls["matcher.track.get"] as? [String: Any],
-            let message = matcher["message"] as? [String: Any],
-            let body = message["body"] as? [String: Any]
-        else {
-            return nil
-        }
-        return body["track"] as? [String: Any]
-    }
-
-    private func isLikelySameTrack(_ track: [String: Any], expected: MusicTrack) -> Bool {
-        let matchedTrack = track["track_name"] as? String ?? ""
-        let matchedArtist = track["artist_name"] as? String ?? ""
-        return textMatches(matchedTrack, expected.name)
-            && textMatches(matchedArtist, expected.artist)
-            && durationMatches(track["track_length"], expectedMs: expected.durationMs)
-    }
-
-    private func durationMatches(_ value: Any?, expectedMs: Int) -> Bool {
-        guard expectedMs > 0, let actualSeconds = numericValue(value), actualSeconds > 0 else {
-            return true
-        }
-        let expectedSeconds = Double(expectedMs) / 1000.0
-        let tolerance = max(4.0, expectedSeconds * 0.04)
-        return abs(actualSeconds - expectedSeconds) <= tolerance
-    }
-
-    private func numericValue(_ value: Any?) -> Double? {
-        switch value {
-        case let value as Double:
-            value
-        case let value as Int:
-            Double(value)
-        case let value as String:
-            Double(value)
-        default:
-            nil
-        }
-    }
-
-    private func textMatches(_ lhs: String, _ rhs: String) -> Bool {
-        let left = normalizedForMatch(lhs)
-        let right = normalizedForMatch(rhs)
-        guard !left.isEmpty, !right.isEmpty else { return false }
-        return left == right || left.contains(right) || right.contains(left)
-    }
-
-    private func normalizedForMatch(_ text: String) -> String {
-        let folded = text
-            .folding(
-                options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
-                locale: .current
-            )
-            .lowercased()
-        let words = folded
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .filter { word in
-                !word.isEmpty && !["feat", "ft", "featuring"].contains(word)
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                httpResponse.statusCode == 200,
+                let token = await decoder.decodeMusixmatchToken(data)
+            else {
+                logger.error("Musixmatch token refresh failed")
+                return nil
             }
-        return words.joined(separator: " ")
+
+            let expiry = Date().addingTimeInterval(3600)
+            self.token = token
+            tokenExpiry = expiry
+            preferences.storeMusixmatchToken(token, expiresAt: expiry)
+            return token
+        } catch {
+            if !Task.isCancelled {
+                logger.error("Musixmatch token request failed")
+            }
+            return nil
+        }
     }
 }
