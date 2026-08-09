@@ -12,3 +12,6 @@ SurfLyrics.xcodeproj/project.xcworkspace/xcuserdata/
 
 # Swift Package Manager
 .build/
+
+# Local agent settings
+/.claude/settings.local.json
