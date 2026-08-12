@@ -42,16 +42,49 @@ enum MusicPlayer: String, CaseIterable, Sendable {
 
 // MARK: - MusicTrack
 
-struct TrackIdentity: Hashable, Sendable {
+enum TrackIdentity: Hashable, Sendable {
+    case sourceTrackID(source: MusicPlayer, id: String)
+    case metadata(
+        source: MusicPlayer,
+        itemKind: PlaybackItemKind,
+        name: String,
+        artist: String,
+        album: String,
+        durationMs: Int
+    )
+}
+
+struct LyricsQueryIdentity: Hashable, Sendable {
     let source: MusicPlayer
+    let itemKind: PlaybackItemKind
     let name: String
     let artist: String
     let album: String
     let durationMs: Int
 }
 
+enum PlaybackItemKind: Equatable, Sendable {
+    case track
+    case localTrack
+    case episode
+    case advertisement
+    case unsupported
+    case unknown
+
+    var supportsLyricsLookup: Bool {
+        switch self {
+        case .track, .localTrack:
+            true
+        case .episode, .advertisement, .unsupported, .unknown:
+            false
+        }
+    }
+}
+
 struct MusicTrack: Equatable, Sendable {
     let source: MusicPlayer
+    let sourceTrackID: String?
+    let itemKind: PlaybackItemKind
     let name: String
     let artist: String
     let album: String
@@ -59,12 +92,52 @@ struct MusicTrack: Equatable, Sendable {
     let progressMs: Int
     let isPlaying: Bool
 
+    init(
+        source: MusicPlayer,
+        sourceTrackID: String? = nil,
+        itemKind: PlaybackItemKind = .track,
+        name: String,
+        artist: String,
+        album: String,
+        durationMs: Int,
+        progressMs: Int,
+        isPlaying: Bool
+    ) {
+        self.source = source
+        self.sourceTrackID = sourceTrackID
+        self.itemKind = itemKind
+        self.name = name
+        self.artist = artist
+        self.album = album
+        self.durationMs = durationMs
+        self.progressMs = progressMs
+        self.isPlaying = isPlaying
+    }
+
     var identity: TrackIdentity {
-        TrackIdentity(
+        if let sourceTrackID = sourceTrackID?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !sourceTrackID.isEmpty
+        {
+            return .sourceTrackID(source: source, id: sourceTrackID)
+        }
+
+        return .metadata(
             source: source,
+            itemKind: itemKind,
             name: name,
             artist: artist,
             album: album,
+            durationMs: durationMs
+        )
+    }
+
+    var lyricsQueryIdentity: LyricsQueryIdentity {
+        LyricsQueryIdentity(
+            source: source,
+            itemKind: itemKind,
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            artist: artist.trimmingCharacters(in: .whitespacesAndNewlines),
+            album: album.trimmingCharacters(in: .whitespacesAndNewlines),
             durationMs: durationMs
         )
     }

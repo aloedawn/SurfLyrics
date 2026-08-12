@@ -29,6 +29,7 @@ final class AppState {
     private var currentLyrics: Lyrics?
     private var isLoadingLyrics = false
     private var hasFinishedLyricsLookup = false
+    private var lyricsQueryIdentity: LyricsQueryIdentity?
     private var currentTrack: MusicTrack?
     private var preferredPlayer: MusicPlayer?
     private var isRefreshInFlight = false
@@ -229,24 +230,35 @@ final class AppState {
         setSourceText(nil)
         isLoadingLyrics = false
         hasFinishedLyricsLookup = false
+        lyricsQueryIdentity = nil
         scheduleNextUpdate()
     }
 
     private func handlePlaying(_ track: MusicTrack) {
         let id = track.identity
         if id != currentTrackId {
+            lyricsTask?.cancel()
             currentTrackId = id
             currentLyrics = nil
             isLoadingLyrics = false
             hasFinishedLyricsLookup = false
+            lyricsQueryIdentity = nil
             setSourceText(textFormatter.sourceDescription(for: track, lyricsSource: nil))
             updateInterval = 1.0
-            loadLyrics(for: track)
+            if track.itemKind.supportsLyricsLookup {
+                loadLyrics(for: track)
+            } else {
+                hasFinishedLyricsLookup = true
+                updateDisplay(for: track, force: false)
+            }
         } else {
-            if !hasFinishedLyricsLookup, !isLoadingLyrics {
+            if track.itemKind.supportsLyricsLookup,
+                currentLyrics == nil,
+                (!hasFinishedLyricsLookup || lyricsQueryIdentity != track.lyricsQueryIdentity)
+            {
                 loadLyrics(for: track)
             }
-            if sourceText == nil {
+            if sourceText == nil || currentLyrics == nil {
                 setSourceText(textFormatter.sourceDescription(for: track, lyricsSource: nil))
             }
             updateDisplay(for: track, force: false)
@@ -262,6 +274,7 @@ final class AppState {
             currentLyrics = nil
             isLoadingLyrics = false
             hasFinishedLyricsLookup = false
+            lyricsQueryIdentity = nil
             setSourceText(textFormatter.sourceDescription(for: track, lyricsSource: nil))
         }
         if sourceText == nil {
@@ -278,22 +291,38 @@ final class AppState {
         setSourceText(textFormatter.sourceDescription(for: track, lyricsSource: nil))
         isLoadingLyrics = false
         hasFinishedLyricsLookup = false
+        lyricsQueryIdentity = nil
         currentTrackId = track.identity
-        loadLyrics(for: track)
+        if track.itemKind.supportsLyricsLookup {
+            loadLyrics(for: track)
+        } else {
+            hasFinishedLyricsLookup = true
+            updateDisplay(for: track, force: false)
+        }
         scheduleNextUpdate(displaying: track.isPlaying ? track : nil)
     }
 
     private func loadLyrics(for track: MusicTrack) {
-        guard !isLoadingLyrics else { return }
+        let requestedQueryIdentity = track.lyricsQueryIdentity
+        if isLoadingLyrics, lyricsQueryIdentity == requestedQueryIdentity {
+            return
+        }
+        lyricsTask?.cancel()
         isLoadingLyrics = true
+        hasFinishedLyricsLookup = false
+        lyricsQueryIdentity = requestedQueryIdentity
         setStatusText(textFormatter.text(for: track, lyricsLine: nil, isLoadingLyrics: true))
         let requestedTrackId = track.identity
 
-        lyricsTask?.cancel()
         lyricsTask = Task { [weak self] in
             guard let self else { return }
             let (lyrics, source) = await musicManager.getLyrics(for: track)
-            guard !Task.isCancelled, requestedTrackId == currentTrackId else { return }
+            guard !Task.isCancelled,
+                requestedTrackId == currentTrackId,
+                requestedQueryIdentity == lyricsQueryIdentity
+            else {
+                return
+            }
 
             isLoadingLyrics = false
             hasFinishedLyricsLookup = true

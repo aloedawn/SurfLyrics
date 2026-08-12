@@ -14,6 +14,9 @@ enum LyricsFetchResult: Equatable, Sendable {
 
 struct LyricsCacheKey: Hashable, Sendable {
     let provider: LyricsProvider
+    let source: MusicPlayer
+    let sourceTrackID: String?
+    let itemKind: PlaybackItemKind
     let name: String
     let artist: String
     let album: String
@@ -21,11 +24,50 @@ struct LyricsCacheKey: Hashable, Sendable {
 
     init(provider: LyricsProvider, track: MusicTrack) {
         self.provider = provider
+        source = track.source
+        itemKind = track.itemKind
+        let trimmedSourceTrackID = track.sourceTrackID?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        sourceTrackID = trimmedSourceTrackID?.isEmpty == false ? trimmedSourceTrackID : nil
         name = track.name.trimmingCharacters(in: .whitespacesAndNewlines)
         artist = track.artist.trimmingCharacters(in: .whitespacesAndNewlines)
         album = track.album.trimmingCharacters(in: .whitespacesAndNewlines)
         durationMs = track.durationMs
     }
+
+    fileprivate var positiveKey: LyricsPositiveCacheKey {
+        let identity: LyricsPositiveCacheKey.Identity
+        if let sourceTrackID {
+            identity = .sourceID(source: source, id: sourceTrackID)
+        } else {
+            identity = .metadata(
+                source: source,
+                itemKind: itemKind,
+                name: name,
+                artist: artist,
+                album: album,
+                durationMs: durationMs
+            )
+        }
+        return LyricsPositiveCacheKey(provider: provider, identity: identity)
+    }
+}
+
+private struct LyricsPositiveCacheKey: Hashable, Sendable {
+    enum Identity: Hashable, Sendable {
+        case sourceID(source: MusicPlayer, id: String)
+        case metadata(
+            source: MusicPlayer,
+            itemKind: PlaybackItemKind,
+            name: String,
+            artist: String,
+            album: String,
+            durationMs: Int
+        )
+    }
+
+    let provider: LyricsProvider
+    let identity: Identity
 }
 
 @MainActor
@@ -36,12 +78,21 @@ final class LyricsCache {
         let expiresAt: Date?
     }
 
+    private struct InFlightRequest {
+        let task: Task<LyricsFetchResult, Never>
+        let generation: UInt64
+        var waiters: Set<UUID>
+    }
+
     private let capacity: Int
     private let negativeTTL: TimeInterval
     private let now: () -> Date
-    private var entries: [LyricsCacheKey: Entry] = [:]
-    private var inFlight: [LyricsCacheKey: Task<LyricsFetchResult, Never>] = [:]
+    private var positiveEntries: [LyricsPositiveCacheKey: Entry] = [:]
+    private var negativeEntries: [LyricsCacheKey: Entry] = [:]
+    private var inFlight: [LyricsCacheKey: InFlightRequest] = [:]
+    private var positiveGenerations: [LyricsPositiveCacheKey: UInt64] = [:]
     private var accessCounter: UInt64 = 0
+    private var generationCounter: UInt64 = 0
 
     init(
         capacity: Int = 64,
@@ -57,61 +108,152 @@ final class LyricsCache {
         for key: LyricsCacheKey,
         loader: @escaping @MainActor () async -> LyricsFetchResult
     ) async -> LyricsFetchResult {
-        if let result = cachedValue(for: key) {
+        if let result = positiveValue(for: key.positiveKey) {
             return result
         }
-        if let task = inFlight[key] {
-            return await task.value
+        if let result = negativeValue(for: key) {
+            return result
+        }
+        let waiterID = UUID()
+        if var request = inFlight[key] {
+            request.waiters.insert(waiterID)
+            inFlight[key] = request
+            let result = await value(
+                from: request.task,
+                for: key,
+                waiterID: waiterID
+            )
+            finishWaiting(for: key, waiterID: waiterID)
+            return result
         }
 
+        generationCounter &+= 1
+        let generation = generationCounter
+        positiveGenerations[key.positiveKey] = generation
         let task = Task { await loader() }
-        inFlight[key] = task
-        let result = await task.value
-        inFlight[key] = nil
-        store(result, for: key)
+        inFlight[key] = InFlightRequest(
+            task: task,
+            generation: generation,
+            waiters: [waiterID]
+        )
+        let result = await value(from: task, for: key, waiterID: waiterID)
+        if inFlight[key]?.generation == generation {
+            inFlight[key] = nil
+            store(result, for: key, generation: generation)
+        }
+        cleanGenerationIfUnused(for: key.positiveKey)
         return result
     }
 
-    private func cachedValue(for key: LyricsCacheKey) -> LyricsFetchResult? {
-        guard var entry = entries[key] else { return nil }
+    private func value(
+        from task: Task<LyricsFetchResult, Never>,
+        for key: LyricsCacheKey,
+        waiterID: UUID
+    ) async -> LyricsFetchResult {
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.cancelWaiting(for: key, waiterID: waiterID)
+            }
+        }
+    }
+
+    private func cancelWaiting(for key: LyricsCacheKey, waiterID: UUID) {
+        guard var request = inFlight[key], request.waiters.remove(waiterID) != nil else {
+            return
+        }
+        if request.waiters.isEmpty {
+            inFlight[key] = nil
+            request.task.cancel()
+            cleanGenerationIfUnused(for: key.positiveKey)
+        } else {
+            inFlight[key] = request
+        }
+    }
+
+    private func finishWaiting(for key: LyricsCacheKey, waiterID: UUID) {
+        guard var request = inFlight[key], request.waiters.remove(waiterID) != nil else {
+            return
+        }
+        inFlight[key] = request
+    }
+
+    private func positiveValue(for key: LyricsPositiveCacheKey) -> LyricsFetchResult? {
+        guard var entry = positiveEntries[key] else { return nil }
+
+        accessCounter &+= 1
+        entry.lastAccess = accessCounter
+        positiveEntries[key] = entry
+        return entry.result
+    }
+
+    private func negativeValue(for key: LyricsCacheKey) -> LyricsFetchResult? {
+        guard var entry = negativeEntries[key] else { return nil }
         if let expiresAt = entry.expiresAt, expiresAt <= now() {
-            entries[key] = nil
+            negativeEntries[key] = nil
             return nil
         }
 
         accessCounter &+= 1
         entry.lastAccess = accessCounter
-        entries[key] = entry
+        negativeEntries[key] = entry
         return entry.result
     }
 
-    private func store(_ result: LyricsFetchResult, for key: LyricsCacheKey) {
-        let expiresAt: Date?
+    private func store(
+        _ result: LyricsFetchResult,
+        for key: LyricsCacheKey,
+        generation: UInt64
+    ) {
+        accessCounter &+= 1
         switch result {
         case .found:
-            expiresAt = nil
+            if positiveGenerations[key.positiveKey] == generation
+                || positiveEntries[key.positiveKey] == nil
+            {
+                positiveEntries[key.positiveKey] = Entry(
+                    result: result,
+                    lastAccess: accessCounter,
+                    expiresAt: nil
+                )
+            }
+            negativeEntries[key] = nil
         case .notFound:
-            expiresAt = now().addingTimeInterval(negativeTTL)
+            negativeEntries[key] = Entry(
+                result: result,
+                lastAccess: accessCounter,
+                expiresAt: now().addingTimeInterval(negativeTTL)
+            )
         case .transientFailure:
             return
         }
-
-        accessCounter &+= 1
-        entries[key] = Entry(
-            result: result,
-            lastAccess: accessCounter,
-            expiresAt: expiresAt
-        )
         evictIfNeeded()
     }
 
     private func evictIfNeeded() {
-        guard entries.count > capacity,
-            let oldestKey = entries.min(by: { $0.value.lastAccess < $1.value.lastAccess })?.key
-        else {
-            return
+        if positiveEntries.count > capacity,
+            let oldestKey = positiveEntries.min(by: {
+                $0.value.lastAccess < $1.value.lastAccess
+            })?.key
+        {
+            positiveEntries[oldestKey] = nil
+            cleanGenerationIfUnused(for: oldestKey)
         }
-        entries[oldestKey] = nil
+        if negativeEntries.count > capacity,
+            let oldestKey = negativeEntries.min(by: {
+                $0.value.lastAccess < $1.value.lastAccess
+            })?.key
+        {
+            negativeEntries[oldestKey] = nil
+        }
+    }
+
+    private func cleanGenerationIfUnused(for positiveKey: LyricsPositiveCacheKey) {
+        let hasInFlightRequest = inFlight.keys.contains { $0.positiveKey == positiveKey }
+        if !hasInFlightRequest {
+            positiveGenerations[positiveKey] = nil
+        }
     }
 }
 
@@ -120,6 +262,7 @@ actor LyricsPayloadDecoder {
         subsystem: "com.aloedawn.surflyrics",
         category: "LyricsDecoding"
     )
+    private let matcher = LyricsCandidateMatcher.default
 
     func decodeLRCLIB(_ data: Data) -> LyricsFetchResult {
         let interval = signposter.beginInterval("LRCLIBDecode")
@@ -129,6 +272,41 @@ actor LyricsPayloadDecoder {
             return .transientFailure
         }
         guard let lrc = payload.syncedLyrics, !lrc.isEmpty else {
+            return .notFound
+        }
+        return lyricsResult(from: lrc)
+    }
+
+    func decodeLRCLIBSearch(
+        _ data: Data,
+        expectedTrack: MusicTrack
+    ) -> LyricsFetchResult {
+        let interval = signposter.beginInterval("LRCLIBSearchDecode")
+        defer { signposter.endInterval("LRCLIBSearchDecode", interval) }
+
+        guard let payloads = try? JSONDecoder().decode([LRCLIBPayload].self, from: data) else {
+            return .transientFailure
+        }
+
+        let viableRecords = payloads.compactMap { payload -> (LRCLIBPayload, LyricsCandidate)? in
+            guard let syncedLyrics = payload.syncedLyrics, !syncedLyrics.isEmpty else {
+                return nil
+            }
+            return (
+                payload,
+                LyricsCandidate(
+                    trackName: payload.trackName ?? "",
+                    artistName: payload.artistName ?? "",
+                    albumName: payload.albumName,
+                    durationMs: milliseconds(fromSeconds: payload.duration?.value)
+                )
+            )
+        }
+        let candidates = viableRecords.map { $0.1 }
+        guard let matchIndex = matcher.bestMatchIndex(for: expectedTrack, among: candidates) else {
+            return .notFound
+        }
+        guard let lrc = viableRecords[matchIndex].0.syncedLyrics else {
             return .notFound
         }
         return lyricsResult(from: lrc)
@@ -144,9 +322,16 @@ actor LyricsPayloadDecoder {
             return .transientFailure
         }
 
-        if let matchedTrack = calls.matcherTrack?.message?.body?.track,
-            !isLikelySameTrack(matchedTrack, expected: expectedTrack)
-        {
+        guard let matchedTrack = calls.matcherTrack?.message?.body?.track else {
+            return .notFound
+        }
+        let candidate = LyricsCandidate(
+            trackName: matchedTrack.name ?? "",
+            artistName: matchedTrack.artist ?? "",
+            albumName: matchedTrack.album,
+            durationMs: milliseconds(fromSeconds: matchedTrack.length?.value)
+        )
+        guard matcher.isLikelyMatch(candidate, for: expectedTrack) else {
             return .notFound
         }
 
@@ -168,41 +353,14 @@ actor LyricsPayloadDecoder {
         return lines.isEmpty ? .notFound : .found(Lyrics(lines: lines))
     }
 
-    private func isLikelySameTrack(
-        _ track: MusixmatchPayload.Track,
-        expected: MusicTrack
-    ) -> Bool {
-        textMatches(track.name ?? "", expected.name)
-            && textMatches(track.artist ?? "", expected.artist)
-            && durationMatches(track.length?.value, expectedMs: expected.durationMs)
+    private func milliseconds(fromSeconds seconds: Double?) -> Int? {
+        guard let seconds, seconds.isFinite, seconds > 0 else { return nil }
+        let milliseconds = (seconds * 1_000).rounded()
+        let maximumTrackDurationMs = 24.0 * 60 * 60 * 1_000
+        guard milliseconds.isFinite, milliseconds <= maximumTrackDurationMs else { return nil }
+        return Int(milliseconds)
     }
 
-    private func durationMatches(_ actualSeconds: Double?, expectedMs: Int) -> Bool {
-        guard expectedMs > 0, let actualSeconds, actualSeconds > 0 else { return true }
-        let expectedSeconds = Double(expectedMs) / 1000.0
-        let tolerance = max(4.0, expectedSeconds * 0.04)
-        return abs(actualSeconds - expectedSeconds) <= tolerance
-    }
-
-    private func textMatches(_ lhs: String, _ rhs: String) -> Bool {
-        let left = normalizedForMatch(lhs)
-        let right = normalizedForMatch(rhs)
-        guard !left.isEmpty, !right.isEmpty else { return false }
-        return left == right || left.contains(right) || right.contains(left)
-    }
-
-    private func normalizedForMatch(_ text: String) -> String {
-        let folded = text
-            .folding(
-                options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
-                locale: .current
-            )
-            .lowercased()
-        return folded
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .filter { !$0.isEmpty && !["feat", "ft", "featuring"].contains($0) }
-            .joined(separator: " ")
-    }
 }
 
 @MainActor
@@ -210,6 +368,7 @@ final class LyricsService {
     private let preferences: AppPreferences
     private let lrclibClient: LRCLIBClient
     private let musixmatchClient: MusixmatchClient
+    private let spotifyMetadataResolver: SpotifyMetadataResolver
     private let cache: LyricsCache
     private let signposter = OSSignposter(
         subsystem: "com.aloedawn.surflyrics",
@@ -232,6 +391,7 @@ final class LyricsService {
             urlSession: urlSession,
             decoder: decoder
         )
+        spotifyMetadataResolver = SpotifyMetadataResolver(urlSession: urlSession)
     }
 
     func getLyrics(for track: MusicTrack) async -> (Lyrics?, String?) {
@@ -239,21 +399,47 @@ final class LyricsService {
         defer { signposter.endInterval("LyricsLoad", interval) }
 
         if preferences.usesLRCLIB {
-            let key = LyricsCacheKey(provider: .lrclib, track: track)
-            let result = await cache.value(for: key) { [lrclibClient] in
-                await Self.fetchLRCLIB(track: track, client: lrclibClient)
-            }
-            if case let .found(lyrics) = result {
+            let result = await lyricsFromLRCLIB(for: track)
+            if let lyrics = result {
                 return (lyrics, "LRCLIB")
             }
+            guard !Task.isCancelled else { return (nil, nil) }
         }
 
+        let shouldResolveSpotifyMetadata = track.source == .spotify
+            && track.itemKind == .track
+            && track.sourceTrackID != nil
+        let canonicalTrack = shouldResolveSpotifyMetadata
+            ? await spotifyMetadataResolver.resolve(track)
+            : nil
+        guard !Task.isCancelled else { return (nil, nil) }
+        let canonicalMetadataChanged: Bool
+        if let canonicalTrack {
+            canonicalMetadataChanged = canonicalTrack.lyricsQueryIdentity
+                != track.lyricsQueryIdentity
+        } else {
+            canonicalMetadataChanged = false
+        }
+
+        if preferences.usesLRCLIB,
+            canonicalMetadataChanged,
+            let canonicalTrack,
+            let lyrics = await lyricsFromLRCLIB(for: canonicalTrack)
+        {
+            return (lyrics, "LRCLIB")
+        }
+        guard !Task.isCancelled else { return (nil, nil) }
+
         if preferences.usesMusixmatch {
-            let key = LyricsCacheKey(provider: .musixmatch, track: track)
-            let result = await cache.value(for: key) { [musixmatchClient] in
-                await musixmatchClient.fetch(for: track)
+            if let lyrics = await lyricsFromMusixmatch(for: track) {
+                return (lyrics, "Musixmatch")
             }
-            if case let .found(lyrics) = result {
+            guard !Task.isCancelled else { return (nil, nil) }
+
+            if canonicalMetadataChanged,
+                let canonicalTrack,
+                let lyrics = await lyricsFromMusixmatch(for: canonicalTrack)
+            {
                 return (lyrics, "Musixmatch")
             }
         }
@@ -261,35 +447,67 @@ final class LyricsService {
         return (nil, nil)
     }
 
+    private func lyricsFromLRCLIB(for track: MusicTrack) async -> Lyrics? {
+        let key = LyricsCacheKey(provider: .lrclib, track: track)
+        let result = await cache.value(for: key) { [lrclibClient] in
+            await Self.fetchLRCLIB(track: track, client: lrclibClient)
+        }
+        guard case let .found(lyrics) = result else { return nil }
+        return lyrics
+    }
+
+    private func lyricsFromMusixmatch(for track: MusicTrack) async -> Lyrics? {
+        let key = LyricsCacheKey(provider: .musixmatch, track: track)
+        let result = await cache.value(for: key) { [musixmatchClient] in
+            await musixmatchClient.fetch(for: track)
+        }
+        guard case let .found(lyrics) = result else { return nil }
+        return lyrics
+    }
+
     private static func fetchLRCLIB(
         track: MusicTrack,
         client: LRCLIBClient
     ) async -> LyricsFetchResult {
-        let exactResult = await client.fetch(
-            artist: track.artist,
-            trackName: track.name,
-            album: track.album
-        )
-        if case .found = exactResult {
+        let exactResult = await client.fetchExact(for: track)
+        guard !Task.isCancelled else { return .transientFailure }
+        switch exactResult {
+        case .found:
             return exactResult
+        case .transientFailure:
+            return .transientFailure
+        case .notFound:
+            break
         }
 
-        let fallbackResult = await client.fetch(
-            artist: track.artist,
-            trackName: track.name,
-            album: nil
-        )
-        if case .found = fallbackResult {
-            return fallbackResult
+        let artistSearchResult = await client.search(for: track, includeArtist: true)
+        guard !Task.isCancelled else { return .transientFailure }
+        switch artistSearchResult {
+        case .found:
+            return artistSearchResult
+        case .transientFailure:
+            return .transientFailure
+        case .notFound:
+            break
         }
-        if exactResult == .notFound, fallbackResult == .notFound {
-            return .notFound
+
+        let titleSearchResult = await client.search(for: track, includeArtist: false)
+        guard !Task.isCancelled else { return .transientFailure }
+        switch titleSearchResult {
+        case .found, .notFound:
+            return titleSearchResult
+        case .transientFailure:
+            return .transientFailure
         }
-        return .transientFailure
     }
 }
 
 private struct LRCLIBPayload: Decodable {
+    let id: Int?
+    let trackName: String?
+    let artistName: String?
+    let albumName: String?
+    let duration: FlexibleDouble?
     let syncedLyrics: String?
 }
 
@@ -349,11 +567,13 @@ private struct MusixmatchPayload: Decodable {
     struct Track: Decodable {
         let name: String?
         let artist: String?
+        let album: String?
         let length: FlexibleDouble?
 
         enum CodingKeys: String, CodingKey {
             case name = "track_name"
             case artist = "artist_name"
+            case album = "album_name"
             case length = "track_length"
         }
     }
@@ -392,13 +612,15 @@ private struct FlexibleDouble: Decodable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
+        let decoded: Double?
         if let double = try? container.decode(Double.self) {
-            value = double
+            decoded = double
         } else if let string = try? container.decode(String.self) {
-            value = Double(string)
+            decoded = Double(string)
         } else {
-            value = nil
+            decoded = nil
         }
+        value = decoded?.isFinite == true ? decoded : nil
     }
 }
 

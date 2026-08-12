@@ -24,10 +24,13 @@
 		A1000000000000000000000000000012 /* LRCLIBClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000012 /* LRCLIBClient.swift */; };
 		A1000000000000000000000000000013 /* LRCParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000013 /* LRCParser.swift */; };
 		A1000000000000000000000000000014 /* MusixmatchClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000014 /* MusixmatchClient.swift */; };
+		A1000000000000000000000000000015 /* LyricsCandidateMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000015 /* LyricsCandidateMatcher.swift */; };
+		A1000000000000000000000000000016 /* SpotifyMetadataResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000000000016 /* SpotifyMetadataResolver.swift */; };
 		D371EDAE7663465A9B8CE83911EA10F8 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BEF4BA3BB8E498C8FCE8ADC8AC75ED2 /* Models.swift */; };
 		D2000000000000000000000000000001 /* ModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3000000000000000000000000000001 /* ModelTests.swift */; };
 		D2000000000000000000000000000002 /* PlaybackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3000000000000000000000000000002 /* PlaybackTests.swift */; };
 		D2000000000000000000000000000003 /* LyricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3000000000000000000000000000003 /* LyricsTests.swift */; };
+		D2000000000000000000000000000004 /* LyricsCandidateMatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3000000000000000000000000000005 /* LyricsCandidateMatcherTests.swift */; };
 		E4ED22681B2C4FA987645742EB4C8CE3 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FA10487D3904638AF1FCCE0E4078893 /* AppDelegate.swift */; };
 		FE3959613ADA463C81851307C3C757C1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DADD9C9EEB1447E78D1BABF80F6CE56C /* Assets.xcassets */; };
 /* End PBXBuildFile section */
@@ -63,12 +66,15 @@
 		B1000000000000000000000000000012 /* LRCLIBClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LRCLIBClient.swift; sourceTree = "<group>"; };
 		B1000000000000000000000000000013 /* LRCParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LRCParser.swift; sourceTree = "<group>"; };
 		B1000000000000000000000000000014 /* MusixmatchClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusixmatchClient.swift; sourceTree = "<group>"; };
+		B1000000000000000000000000000015 /* LyricsCandidateMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsCandidateMatcher.swift; sourceTree = "<group>"; };
+		B1000000000000000000000000000016 /* SpotifyMetadataResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyMetadataResolver.swift; sourceTree = "<group>"; };
 		BB110C47FEF24266A779780152D7E088 /* SurfLyrics.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SurfLyrics.entitlements; sourceTree = "<group>"; };
 		DADD9C9EEB1447E78D1BABF80F6CE56C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D3000000000000000000000000000001 /* ModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelTests.swift; sourceTree = "<group>"; };
 		D3000000000000000000000000000002 /* PlaybackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackTests.swift; sourceTree = "<group>"; };
 		D3000000000000000000000000000003 /* LyricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsTests.swift; sourceTree = "<group>"; };
 		D3000000000000000000000000000004 /* SurfLyricsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SurfLyricsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D3000000000000000000000000000005 /* LyricsCandidateMatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsCandidateMatcherTests.swift; sourceTree = "<group>"; };
 		E53C2666B0404433B780B7985925AD2D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F56778107C4143A393528FDFAEDF4A17 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -115,6 +121,8 @@
 				B1000000000000000000000000000012 /* LRCLIBClient.swift */,
 				B1000000000000000000000000000013 /* LRCParser.swift */,
 				B1000000000000000000000000000014 /* MusixmatchClient.swift */,
+				B1000000000000000000000000000015 /* LyricsCandidateMatcher.swift */,
+				B1000000000000000000000000000016 /* SpotifyMetadataResolver.swift */,
 				E53C2666B0404433B780B7985925AD2D /* Info.plist */,
 				BB110C47FEF24266A779780152D7E088 /* SurfLyrics.entitlements */,
 				DADD9C9EEB1447E78D1BABF80F6CE56C /* Assets.xcassets */,
@@ -129,6 +137,7 @@
 				D3000000000000000000000000000001 /* ModelTests.swift */,
 				D3000000000000000000000000000002 /* PlaybackTests.swift */,
 				D3000000000000000000000000000003 /* LyricsTests.swift */,
+				D3000000000000000000000000000005 /* LyricsCandidateMatcherTests.swift */,
 			);
 			path = SurfLyricsTests;
 			sourceTree = "<group>";
@@ -251,6 +260,8 @@
 				A1000000000000000000000000000012 /* LRCLIBClient.swift in Sources */,
 				A1000000000000000000000000000013 /* LRCParser.swift in Sources */,
 				A1000000000000000000000000000014 /* MusixmatchClient.swift in Sources */,
+				A1000000000000000000000000000015 /* LyricsCandidateMatcher.swift in Sources */,
+				A1000000000000000000000000000016 /* SpotifyMetadataResolver.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -261,6 +272,7 @@
 				D2000000000000000000000000000001 /* ModelTests.swift in Sources */,
 				D2000000000000000000000000000002 /* PlaybackTests.swift in Sources */,
 				D2000000000000000000000000000003 /* LyricsTests.swift in Sources */,
+				D2000000000000000000000000000004 /* LyricsCandidateMatcherTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
