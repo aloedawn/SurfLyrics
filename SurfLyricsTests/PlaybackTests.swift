@@ -128,6 +128,78 @@ final class PlaybackTests: XCTestCase {
         XCTAssertTrue(freshLyricsDisplayed)
     }
 
+    func testLyricsCompletionDoesNotPostponeExistingRefresh() async {
+        let manager = ControlledMusicManager()
+        let state = AppState(musicManager: manager)
+        defer { state.shutdown() }
+
+        _ = await eventually { manager.playbackCallCount == 1 }
+        manager.resolveNextPlayback(with: .init(
+            track: makeTrack(source: .spotify, isPlaying: true),
+            issue: nil
+        ))
+        _ = await eventually { manager.lyricsCallCount == 1 }
+        guard let originalRefreshDate = state.scheduledRefreshDate else {
+            return XCTFail("Expected the initial playback refresh to be scheduled")
+        }
+
+        manager.resolveLyrics(
+            forTrackNamed: "Track",
+            with: (Lyrics(lines: [
+                LyricsLine(timeMs: 1_000, text: "Now"),
+                LyricsLine(timeMs: 2_000, text: "Next"),
+            ]), "Test")
+        )
+
+        let lyricsDisplayed = await eventually { state.statusText == "Now" }
+        XCTAssertTrue(lyricsDisplayed)
+        XCTAssertEqual(state.scheduledRefreshDate, originalRefreshDate)
+    }
+
+    func testScheduledLyricsDisplayDoesNotWaitForPlaybackRefresh() async {
+        let manager = ControlledMusicManager()
+        let state = AppState(musicManager: manager)
+
+        _ = await eventually { manager.playbackCallCount == 1 }
+        manager.resolveNextPlayback(with: .init(
+            track: makeTrack(source: .spotify, isPlaying: true),
+            issue: nil
+        ))
+        _ = await eventually { manager.lyricsCallCount == 1 }
+        manager.resolveLyrics(
+            forTrackNamed: "Track",
+            with: (Lyrics(lines: [
+                LyricsLine(timeMs: 1_000, text: "Now"),
+                LyricsLine(timeMs: 2_000, text: "Next"),
+            ]), "Test")
+        )
+        _ = await eventually { state.statusText == "Now" }
+
+        state.fireScheduledRefreshForTesting()
+
+        XCTAssertEqual(state.statusText, "Next")
+        let refreshStarted = await eventually {
+            manager.playbackCallCount == 2 && manager.pendingPlaybackCount == 1
+        }
+        XCTAssertTrue(refreshStarted)
+        XCTAssertEqual(state.statusText, "Next")
+
+        manager.resolveNextPlayback(with: .init(
+            track: MusicTrack(
+                source: .spotify,
+                name: "Track",
+                artist: "Artist",
+                album: "Album",
+                durationMs: 180_000,
+                progressMs: 2_000,
+                isPlaying: true
+            ),
+            issue: nil
+        ))
+        _ = await eventually { manager.pendingPlaybackCount == 0 }
+        state.shutdown()
+    }
+
     func testTimerReschedulesForIdleMissingLyricsAndUpcomingLine() async {
         let idleManager = ControlledMusicManager()
         let idleState = AppState(musicManager: idleManager)
@@ -136,7 +208,7 @@ final class PlaybackTests: XCTestCase {
         let idleScheduled = await eventually { idleState.scheduledRefreshInterval == 3.0 }
         XCTAssertTrue(idleScheduled)
         XCTAssertEqual(idleState.scheduledRefreshInterval, 3.0)
-        XCTAssertEqual(idleState.scheduledRefreshTolerance ?? -1, 0.2, accuracy: 0.001)
+        XCTAssertEqual(idleState.scheduledRefreshTolerance ?? -1, 0, accuracy: 0.001)
         idleState.shutdown()
 
         let missingManager = ControlledMusicManager()
@@ -150,7 +222,7 @@ final class PlaybackTests: XCTestCase {
         missingManager.resolveLyrics(forTrackNamed: "Track", with: (nil, nil))
         let missingScheduled = await eventually { missingState.scheduledRefreshInterval == 5.0 }
         XCTAssertTrue(missingScheduled)
-        XCTAssertEqual(missingState.scheduledRefreshTolerance ?? -1, 0.2, accuracy: 0.001)
+        XCTAssertEqual(missingState.scheduledRefreshTolerance ?? -1, 0, accuracy: 0.001)
         missingState.shutdown()
 
         let syncedManager = ControlledMusicManager()
@@ -170,7 +242,7 @@ final class PlaybackTests: XCTestCase {
         )
         let syncedScheduled = await eventually { syncedState.scheduledRefreshInterval == 0.5 }
         XCTAssertTrue(syncedScheduled)
-        XCTAssertEqual(syncedState.scheduledRefreshTolerance ?? -1, 0.05, accuracy: 0.001)
+        XCTAssertEqual(syncedState.scheduledRefreshTolerance ?? -1, 0, accuracy: 0.001)
         syncedState.shutdown()
     }
 

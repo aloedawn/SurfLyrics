@@ -3,6 +3,11 @@ import Foundation
 
 @MainActor
 final class AppState {
+    private struct ScheduledLyricsDisplay {
+        let trackID: TrackIdentity
+        let progressMs: Int
+    }
+
     @Published private(set) var statusText = "♪ Initializing"
     @Published private(set) var sourceText: String?
     @Published private(set) var needsAutomationPermission = false
@@ -12,6 +17,9 @@ final class AppState {
     private let idleStatusText = "♪"
 
     private var timer: Timer?
+    private var scheduledInterval: TimeInterval?
+    private var scheduledLyricsDisplay: ScheduledLyricsDisplay?
+    private var scheduledUpdateGeneration: UInt = 0
     private var refreshTask: Task<Void, Never>?
     private var lyricsTask: Task<Void, Never>?
     private var distributedObservers: [NSObjectProtocol] = []
@@ -27,8 +35,9 @@ final class AppState {
     private var needsTrailingRefresh = false
     private var isShuttingDown = false
 
-    var scheduledRefreshInterval: TimeInterval { updateInterval }
+    var scheduledRefreshInterval: TimeInterval { scheduledInterval ?? updateInterval }
     var scheduledRefreshTolerance: TimeInterval? { timer?.tolerance }
+    var scheduledRefreshDate: Date? { timer?.fireDate }
 
     init(
         preferences: AppPreferences = AppPreferences(),
@@ -85,23 +94,84 @@ final class AppState {
         localObservers.append(lyricsObserver)
     }
 
-    private func scheduleNextUpdate() {
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: updateInterval, repeats: false) {
-            [weak self] _ in
+    private func scheduleNextUpdate(
+        displaying track: MusicTrack? = nil,
+        onlyIfEarlier: Bool = false
+    ) {
+        let fireDate: Date
+        if onlyIfEarlier {
+            guard let timer, timer.isValid, let scheduledInterval else { return }
+            // Keep the original playback snapshot as the scheduling anchor.
+            let candidateFireDate = timer.fireDate.addingTimeInterval(
+                updateInterval - scheduledInterval
+            )
+            guard candidateFireDate < timer.fireDate else { return }
+            fireDate = candidateFireDate
+        } else {
+            fireDate = Date().addingTimeInterval(updateInterval)
+        }
+
+        cancelScheduledUpdate()
+        scheduledInterval = updateInterval
+        if let track {
+            scheduledLyricsDisplay = ScheduledLyricsDisplay(
+                trackID: track.identity,
+                progressMs: track.progressMs + Int((updateInterval * 1_000).rounded())
+            )
+        }
+        let generation = scheduledUpdateGeneration
+        let display = scheduledLyricsDisplay
+        let timer = Timer(fire: fireDate, interval: 0, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.requestPlaybackRefresh()
+                self?.handleScheduledUpdate(generation: generation, display: display)
             }
         }
-        if let timer {
-            timer.tolerance = min(updateInterval * 0.1, 0.2)
-            RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func handleScheduledUpdate(
+        generation: UInt,
+        display: ScheduledLyricsDisplay?
+    ) {
+        guard generation == scheduledUpdateGeneration else { return }
+        cancelScheduledUpdate()
+        if let display {
+            displayScheduledLyrics(display)
         }
+        requestPlaybackRefresh()
+    }
+
+    private func displayScheduledLyrics(_ display: ScheduledLyricsDisplay) {
+        guard currentTrackId == display.trackID,
+            let track = currentTrack,
+            track.isPlaying,
+            !isLoadingLyrics,
+            let lyrics = currentLyrics
+        else {
+            return
+        }
+
+        let lyricLine = lyrics.lookup(at: display.progressMs).currentText
+        setStatusText(textFormatter.text(
+            for: track,
+            lyricsLine: lyricLine,
+            isLoadingLyrics: false
+        ))
+    }
+
+    private func cancelScheduledUpdate() {
+        scheduledUpdateGeneration &+= 1
+        timer?.invalidate()
+        timer = nil
+        scheduledInterval = nil
+        scheduledLyricsDisplay = nil
     }
 
     func requestPlaybackRefresh(preferredPlayer: MusicPlayer? = nil) {
         guard !isShuttingDown else { return }
         if let preferredPlayer {
+            cancelScheduledUpdate()
             self.preferredPlayer = preferredPlayer
         }
 
@@ -181,7 +251,7 @@ final class AppState {
             }
             updateDisplay(for: track, force: false)
         }
-        scheduleNextUpdate()
+        scheduleNextUpdate(displaying: track)
     }
 
     private func handlePaused(_ track: MusicTrack) {
@@ -210,7 +280,7 @@ final class AppState {
         hasFinishedLyricsLookup = false
         currentTrackId = track.identity
         loadLyrics(for: track)
-        scheduleNextUpdate()
+        scheduleNextUpdate(displaying: track.isPlaying ? track : nil)
     }
 
     private func loadLyrics(for track: MusicTrack) {
@@ -229,13 +299,15 @@ final class AppState {
             hasFinishedLyricsLookup = true
             currentLyrics = lyrics
             setSourceText(textFormatter.sourceDescription(for: track, lyricsSource: source))
-            if lyrics == nil {
-                updateInterval = 5.0
-            }
             if let currentTrack {
                 updateDisplay(for: currentTrack, force: false)
             }
-            scheduleNextUpdate()
+            if lyrics == nil {
+                updateInterval = 5.0
+                scheduleNextUpdate()
+            } else if let currentTrack, timer != nil, currentTrack.isPlaying {
+                scheduleNextUpdate(displaying: currentTrack, onlyIfEarlier: true)
+            }
         }
     }
 
@@ -288,8 +360,7 @@ final class AppState {
     func shutdown() {
         guard !isShuttingDown else { return }
         isShuttingDown = true
-        timer?.invalidate()
-        timer = nil
+        cancelScheduledUpdate()
         refreshTask?.cancel()
         lyricsTask?.cancel()
         refreshTask = nil
@@ -300,5 +371,13 @@ final class AppState {
         localObservers.forEach(NotificationCenter.default.removeObserver)
         distributedObservers.removeAll()
         localObservers.removeAll()
+    }
+
+    func fireScheduledRefreshForTesting() {
+        guard timer != nil else { return }
+        handleScheduledUpdate(
+            generation: scheduledUpdateGeneration,
+            display: scheduledLyricsDisplay
+        )
     }
 }
