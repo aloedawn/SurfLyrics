@@ -11,7 +11,7 @@ struct StatusTextFormatter {
         guard !isLoadingLyrics, let lyricsLine else {
             return trackDescription(for: track)
         }
-        return truncate(lyricsLine)
+        return lyricsLine
     }
 
     func sourceDescription(for track: MusicTrack, lyricsSource: String?) -> String {
@@ -31,11 +31,6 @@ struct StatusTextFormatter {
         case .trackAndArtist:
             text = "♫ \(track.name) — \(track.artist)"
         }
-        return truncate(text)
-    }
-
-    private func truncate(_ text: String) -> String {
-        let limit = preferences.maxTextLength
-        return text.count > limit ? String(text.prefix(limit - 3)) + "..." : text
+        return text
     }
 }

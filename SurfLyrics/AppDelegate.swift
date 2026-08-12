@@ -16,7 +16,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.appState = appState
         statusBarController = StatusBarController(
             appState: appState,
-            preferences: preferences,
             actions: StatusMenuActions(
                 openAutomationSettings: AppCommands.openAutomationSettings,
                 openSettings: { [settingsWindowController] in

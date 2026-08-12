@@ -2,8 +2,6 @@ import Foundation
 
 enum AppPreferenceKey {
     static let displayMode = "displayMode"
-    static let maxTextLength = "maxTextLength"
-    static let lyricsTransitionEnabled = "lyricsTransitionEnabled"
     static let lyricsSourceLRCLIB = "lyricsSourceLRCLIB"
     static let lyricsSourceMusixmatch = "lyricsSourceMusixmatch"
 
@@ -27,15 +25,6 @@ struct AppPreferences {
     var displayMode: DisplayMode {
         let rawValue = defaults.string(forKey: AppPreferenceKey.displayMode)
         return rawValue.flatMap(DisplayMode.init(rawValue:)) ?? .trackAndArtist
-    }
-
-    var maxTextLength: Int {
-        let value = defaults.integer(forKey: AppPreferenceKey.maxTextLength)
-        return value > 0 ? value : 60
-    }
-
-    var lyricsTransitionEnabled: Bool {
-        defaults.bool(forKey: AppPreferenceKey.lyricsTransitionEnabled)
     }
 
     var usesLRCLIB: Bool {

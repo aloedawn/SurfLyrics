@@ -44,9 +44,8 @@ final class ModelTests: XCTestCase {
     }
 
     @MainActor
-    func testStatusFormatterTruncatesAtConfiguredLength() {
+    func testStatusFormatterPreservesFullLyricsText() {
         let defaults = makeDefaults()
-        defaults.set(10, forKey: AppPreferenceKey.maxTextLength)
         let formatter = StatusTextFormatter(preferences: AppPreferences(defaults: defaults))
         let track = MusicTrack(
             source: .spotify,
@@ -60,7 +59,7 @@ final class ModelTests: XCTestCase {
 
         XCTAssertEqual(
             formatter.text(for: track, lyricsLine: "A very long lyric", isLoadingLyrics: false),
-            "A very ..."
+            "A very long lyric"
         )
     }
 

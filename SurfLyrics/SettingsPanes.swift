@@ -29,7 +29,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
 struct DisplaySettingsPane: View {
     @AppStorage(AppPreferenceKey.displayMode) private var displayMode = DisplayMode.trackAndArtist.rawValue
-    @AppStorage(AppPreferenceKey.maxTextLength) private var maxTextLength = 60
 
     var body: some View {
         SettingsPane(title: "표시") {
@@ -42,18 +41,6 @@ struct DisplaySettingsPane: View {
                 .pickerStyle(.radioGroup)
                 .labelsHidden()
             }
-
-            LabeledRow("최대 길이") {
-                Picker("", selection: $maxTextLength) {
-                    Text("40자").tag(40)
-                    Text("60자").tag(60)
-                    Text("80자").tag(80)
-                    Text("100자").tag(100)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 240)
-            }
         }
         .onChange(of: displayMode) {
             NotificationCenter.default.post(name: .settingsDisplayModeChanged, object: nil)
@@ -62,13 +49,10 @@ struct DisplaySettingsPane: View {
 }
 
 struct BehaviorSettingsPane: View {
-    @AppStorage(AppPreferenceKey.lyricsTransitionEnabled) private var fadeEnabled = false
     @State private var launchAtLogin = LaunchAtLoginManager.isEnabled()
 
     var body: some View {
         SettingsPane(title: "동작") {
-            Toggle("가사 전환 페이드 효과", isOn: $fadeEnabled)
-
             Toggle("로그인 시 자동 실행", isOn: $launchAtLogin)
                 .onChange(of: launchAtLogin) {
                     LaunchAtLoginManager.toggle()
