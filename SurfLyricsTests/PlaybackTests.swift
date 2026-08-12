@@ -345,7 +345,7 @@ final class PlaybackTests: XCTestCase {
 
         XCTAssertTrue(refreshFinished)
         XCTAssertEqual(manager.playbackCallCount, 1)
-        XCTAssertEqual(state.statusText, "♪ Initializing")
+        XCTAssertEqual(state.statusText, "Initializing")
     }
 
     func testStaleLyricsCompletionCannotOverwriteNewTrack() async {

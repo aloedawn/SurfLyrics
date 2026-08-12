@@ -14,7 +14,19 @@ final class StatusBarController {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         menuController = StatusMenuController(actions: actions)
 
-        statusItem.button?.title = appState.statusText
+        if let button = statusItem.button {
+            let symbolConfiguration = NSImage.SymbolConfiguration(
+                pointSize: 18,
+                weight: .regular
+            )
+            button.image = NSImage(
+                systemSymbolName: "music.note",
+                accessibilityDescription: "음악"
+            )?.withSymbolConfiguration(symbolConfiguration)
+            button.imagePosition = .imageLeading
+            button.imageScaling = .scaleNone
+            button.title = appState.statusText
+        }
         // On macOS 27, expanded-interface sessions are for custom popovers/windows.
         // Assigning NSMenu keeps AppKit's standard menu tracking and keyboard behavior.
         statusItem.menu = menuController.makeMenu()

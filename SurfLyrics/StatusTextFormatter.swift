@@ -25,11 +25,11 @@ struct StatusTextFormatter {
         let text: String
         switch preferences.displayMode {
         case .trackOnly:
-            text = "♫ \(track.name)"
+            text = track.name
         case .artistOnly:
-            text = "♫ \(track.artist)"
+            text = track.artist
         case .trackAndArtist:
-            text = "♫ \(track.name) — \(track.artist)"
+            text = "\(track.name) — \(track.artist)"
         }
         return text
     }

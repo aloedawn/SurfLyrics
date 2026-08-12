@@ -8,13 +8,13 @@ final class AppState {
         let progressMs: Int
     }
 
-    @Published private(set) var statusText = "♪ Initializing"
+    @Published private(set) var statusText = "Initializing"
     @Published private(set) var sourceText: String?
     @Published private(set) var needsAutomationPermission = false
 
     private let musicManager: any MusicManaging
     private let textFormatter: StatusTextFormatter
-    private let idleStatusText = "♪"
+    private let idleStatusText = ""
 
     private var timer: Timer?
     private var scheduledInterval: TimeInterval?
