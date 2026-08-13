@@ -8,7 +8,7 @@ final class AppState {
         let progressMs: Int
     }
 
-    @Published private(set) var statusText = "Initializing"
+    @Published private(set) var statusText = ""
     @Published private(set) var sourceText: String?
     @Published private(set) var needsAutomationPermission = false
 

@@ -64,7 +64,7 @@ final class ModelTests: XCTestCase {
     }
 
     @MainActor
-    func testStatusFormatterDoesNotPrefixTrackWithTextNote() {
+    func testStatusFormatterPrefixesTrackWithTextNote() {
         let defaults = makeDefaults()
         let formatter = StatusTextFormatter(preferences: AppPreferences(defaults: defaults))
         let track = MusicTrack(
@@ -79,7 +79,7 @@ final class ModelTests: XCTestCase {
 
         XCTAssertEqual(
             formatter.text(for: track, lyricsLine: nil, isLoadingLyrics: false),
-            "Song — Artist"
+            "♫ Song — Artist"
         )
     }
 

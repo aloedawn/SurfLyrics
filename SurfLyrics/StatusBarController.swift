@@ -5,28 +5,29 @@ import Combine
 final class StatusBarController {
     private let statusItem: NSStatusItem
     private let menuController: StatusMenuController
+    private let idleStatusImage: NSImage?
     private var cancellables = Set<AnyCancellable>()
 
     init(
         appState: AppState,
         actions: StatusMenuActions
     ) {
+        let symbolConfiguration = NSImage.SymbolConfiguration(
+            pointSize: 16,
+            weight: .regular
+        )
+        idleStatusImage = NSImage(
+            systemSymbolName: "music.note",
+            accessibilityDescription: "음악"
+        )?.withSymbolConfiguration(symbolConfiguration)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         menuController = StatusMenuController(actions: actions)
 
         if let button = statusItem.button {
-            let symbolConfiguration = NSImage.SymbolConfiguration(
-                pointSize: 18,
-                weight: .regular
-            )
-            button.image = NSImage(
-                systemSymbolName: "music.note",
-                accessibilityDescription: "음악"
-            )?.withSymbolConfiguration(symbolConfiguration)
             button.imagePosition = .imageLeading
             button.imageScaling = .scaleNone
-            button.title = appState.statusText
         }
+        updateLabel(appState.statusText)
         // On macOS 27, expanded-interface sessions are for custom popovers/windows.
         // Assigning NSMenu keeps AppKit's standard menu tracking and keyboard behavior.
         statusItem.menu = menuController.makeMenu()
@@ -50,7 +51,7 @@ final class StatusBarController {
 
     private func updateLabel(_ text: String) {
         guard let button = statusItem.button else { return }
-        guard button.title != text else { return }
         button.title = text
+        button.image = text.isEmpty ? idleStatusImage : nil
     }
 }

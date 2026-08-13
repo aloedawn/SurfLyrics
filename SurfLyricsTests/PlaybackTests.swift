@@ -345,7 +345,7 @@ final class PlaybackTests: XCTestCase {
 
         XCTAssertTrue(refreshFinished)
         XCTAssertEqual(manager.playbackCallCount, 1)
-        XCTAssertEqual(state.statusText, "Initializing")
+        XCTAssertEqual(state.statusText, "")
     }
 
     func testStaleLyricsCompletionCannotOverwriteNewTrack() async {
@@ -596,6 +596,7 @@ final class PlaybackTests: XCTestCase {
         idleManager.resolveNextPlayback(with: .init(track: nil, issue: .unavailable("idle")))
         let idleScheduled = await eventually { idleState.scheduledRefreshInterval == 3.0 }
         XCTAssertTrue(idleScheduled)
+        XCTAssertEqual(idleState.statusText, "")
         XCTAssertEqual(idleState.scheduledRefreshInterval, 3.0)
         XCTAssertEqual(idleState.scheduledRefreshTolerance ?? -1, 0, accuracy: 0.001)
         idleState.shutdown()
