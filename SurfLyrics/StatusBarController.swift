@@ -3,6 +3,8 @@ import Combine
 
 @MainActor
 final class StatusBarController {
+    private static let idleStatusItemExtraWidth: CGFloat = 2
+
     private let statusItem: NSStatusItem
     private let menuController: StatusMenuController
     private let idleStatusImage: NSImage?
@@ -51,7 +53,11 @@ final class StatusBarController {
 
     private func updateLabel(_ text: String) {
         guard let button = statusItem.button else { return }
+        let isIdle = text.isEmpty
         button.title = text
-        button.image = text.isEmpty ? idleStatusImage : nil
+        button.image = isIdle ? idleStatusImage : nil
+        statusItem.length = isIdle
+            ? NSStatusBar.system.thickness + Self.idleStatusItemExtraWidth
+            : NSStatusItem.variableLength
     }
 }
