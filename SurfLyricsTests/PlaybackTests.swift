@@ -627,7 +627,7 @@ final class PlaybackTests: XCTestCase {
         manager.resolveNextPlayback(with: .init(track: soughtTrack, issue: nil))
         let voiceDisplayed = await eventually { state.statusText == "Voice resumes" }
         XCTAssertTrue(voiceDisplayed)
-        XCTAssertEqual(state.sourceText, "재생 앱: Spotify · 가사 소스: Spotify 클라이언트")
+        XCTAssertEqual(state.sourceText, "재생 앱: Spotify\n가사 소스: Spotify 클라이언트")
     }
 
     func testTimerReschedulesForIdleMissingLyricsAndUpcomingLine() async {

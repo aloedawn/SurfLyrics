@@ -12,7 +12,7 @@ struct StatusMenuActions {
 final class StatusMenuController: NSObject {
     private let actions: StatusMenuActions
 
-    private var sourceMenuItem: NSMenuItem?
+    private var sourceMenuItems: [NSMenuItem] = []
     private var sourceSeparator: NSMenuItem?
     private var permissionMenuItem: NSMenuItem?
     private var permissionSeparator: NSMenuItem?
@@ -25,11 +25,13 @@ final class StatusMenuController: NSObject {
     func makeMenu() -> NSMenu {
         let menu = NSMenu()
 
-        let sourceItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        sourceItem.isEnabled = false
-        sourceItem.isHidden = true
-        menu.addItem(sourceItem)
-        sourceMenuItem = sourceItem
+        sourceMenuItems = (0..<2).map { _ in
+            let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            item.isHidden = true
+            menu.addItem(item)
+            return item
+        }
 
         let sourceSeparator = NSMenuItem.separator()
         sourceSeparator.isHidden = true
@@ -71,14 +73,12 @@ final class StatusMenuController: NSObject {
     }
 
     func updateSourceItem(_ source: String?) {
-        if let source {
-            sourceMenuItem?.title = source
-            sourceMenuItem?.isHidden = false
-            sourceSeparator?.isHidden = false
-        } else {
-            sourceMenuItem?.isHidden = true
-            sourceSeparator?.isHidden = true
+        let lines = source?.components(separatedBy: "\n") ?? []
+        for (index, item) in sourceMenuItems.enumerated() {
+            item.title = index < lines.count ? lines[index] : ""
+            item.isHidden = item.title.isEmpty
         }
+        sourceSeparator?.isHidden = sourceMenuItems.allSatisfy(\.isHidden)
     }
 
     func updatePermissionItem(_ needs: Bool) {

@@ -23,7 +23,7 @@ struct StatusTextFormatter {
 
     func sourceDescription(for track: MusicTrack, lyricsSource: String?) -> String {
         if let lyricsSource {
-            return "재생 앱: \(track.source.displayName) · 가사 소스: \(lyricsSource)"
+            return "재생 앱: \(track.source.displayName)\n가사 소스: \(lyricsSource)"
         }
         return "재생 앱: \(track.source.displayName)"
     }
