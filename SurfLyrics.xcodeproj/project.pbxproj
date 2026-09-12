@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A30000000000000000000001 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 8634CC9B2F866BB2008DDC84 /* AppIcon.icon */; };
+		A2000000000000000000000000000010 /* SpotifyConnectionLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000000000010 /* SpotifyConnectionLauncher.swift */; };
+		A2000000000000000000000000000009 /* SpotifyConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000000000009 /* SpotifyConnectionTests.swift */; };
+		A2000000000000000000000000000008 /* SpotifyClientConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000000000008 /* SpotifyClientConnection.swift */; };
+		A2000000000000000000000000000007 /* SpotifyClientEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000000000007 /* SpotifyClientEndpoint.swift */; };
 		A2000000000000000000000000000006 /* LyricsPayloadDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000000000006 /* LyricsPayloadDecoder.swift */; };
 		A2000000000000000000000000000005 /* LyricsCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000000000005 /* LyricsCache.swift */; };
 		A2000000000000000000000000000004 /* LyricsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000000000004 /* LyricsProvider.swift */; };
@@ -38,7 +43,6 @@
 		D2000000000000000000000000000003 /* LyricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3000000000000000000000000000003 /* LyricsTests.swift */; };
 		D2000000000000000000000000000004 /* LyricsCandidateMatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3000000000000000000000000000005 /* LyricsCandidateMatcherTests.swift */; };
 		E4ED22681B2C4FA987645742EB4C8CE3 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FA10487D3904638AF1FCCE0E4078893 /* AppDelegate.swift */; };
-		FE3959613ADA463C81851307C3C757C1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DADD9C9EEB1447E78D1BABF80F6CE56C /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,6 +56,10 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		B2000000000000000000000000000010 /* SpotifyConnectionLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../SpotifyConnectionHelper/SpotifyConnectionLauncher.swift"; sourceTree = "<group>"; };
+		B2000000000000000000000000000009 /* SpotifyConnectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SpotifyConnectionTests.swift"; sourceTree = "<group>"; };
+		B2000000000000000000000000000008 /* SpotifyClientConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyClientConnection.swift; sourceTree = "<group>"; };
+		B2000000000000000000000000000007 /* SpotifyClientEndpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyClientEndpoint.swift; sourceTree = "<group>"; };
 		B2000000000000000000000000000006 /* LyricsPayloadDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsPayloadDecoder.swift; sourceTree = "<group>"; };
 		B2000000000000000000000000000005 /* LyricsCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsCache.swift; sourceTree = "<group>"; };
 		B2000000000000000000000000000004 /* LyricsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsProvider.swift; sourceTree = "<group>"; };
@@ -81,7 +89,6 @@
 		B1000000000000000000000000000015 /* LyricsCandidateMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsCandidateMatcher.swift; sourceTree = "<group>"; };
 		B1000000000000000000000000000016 /* SpotifyMetadataResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyMetadataResolver.swift; sourceTree = "<group>"; };
 		BB110C47FEF24266A779780152D7E088 /* SurfLyrics.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SurfLyrics.entitlements; sourceTree = "<group>"; };
-		DADD9C9EEB1447E78D1BABF80F6CE56C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D3000000000000000000000000000001 /* ModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelTests.swift; sourceTree = "<group>"; };
 		D3000000000000000000000000000002 /* PlaybackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackTests.swift; sourceTree = "<group>"; };
 		D3000000000000000000000000000003 /* LyricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsTests.swift; sourceTree = "<group>"; };
@@ -115,6 +122,8 @@
 			isa = PBXGroup;
 			children = (
 				B2000000000000000000000000000001 /* SpotifyClientLyricsClient.swift */,
+				B2000000000000000000000000000008 /* SpotifyClientConnection.swift */,
+				B2000000000000000000000000000007 /* SpotifyClientEndpoint.swift */,
 				B2000000000000000000000000000006 /* LyricsPayloadDecoder.swift */,
 				B2000000000000000000000000000005 /* LyricsCache.swift */,
 				B2000000000000000000000000000004 /* LyricsProvider.swift */,
@@ -142,7 +151,6 @@
 				B1000000000000000000000000000016 /* SpotifyMetadataResolver.swift */,
 				E53C2666B0404433B780B7985925AD2D /* Info.plist */,
 				BB110C47FEF24266A779780152D7E088 /* SurfLyrics.entitlements */,
-				DADD9C9EEB1447E78D1BABF80F6CE56C /* Assets.xcassets */,
 				8634CC9B2F866BB2008DDC84 /* AppIcon.icon */,
 			);
 			path = SurfLyrics;
@@ -152,6 +160,8 @@
 			isa = PBXGroup;
 			children = (
 				B2000000000000000000000000000003 /* SpotifyClientLyricsTests.swift */,
+				B2000000000000000000000000000010 /* SpotifyConnectionLauncher.swift */,
+				B2000000000000000000000000000009 /* SpotifyConnectionTests.swift */,
 				D3000000000000000000000000000001 /* ModelTests.swift */,
 				D3000000000000000000000000000002 /* PlaybackTests.swift */,
 				D3000000000000000000000000000003 /* LyricsTests.swift */,
@@ -249,7 +259,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A2000000000000000000000000000002 /* SpotifyClientBridge.js in Resources */,
-				FE3959613ADA463C81851307C3C757C1 /* Assets.xcassets in Resources */,
+				A30000000000000000000001 /* AppIcon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -261,6 +271,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A2000000000000000000000000000001 /* SpotifyClientLyricsClient.swift in Sources */,
+				A2000000000000000000000000000008 /* SpotifyClientConnection.swift in Sources */,
+				A2000000000000000000000000000007 /* SpotifyClientEndpoint.swift in Sources */,
 				A2000000000000000000000000000006 /* LyricsPayloadDecoder.swift in Sources */,
 				A2000000000000000000000000000005 /* LyricsCache.swift in Sources */,
 				A2000000000000000000000000000004 /* LyricsProvider.swift in Sources */,
@@ -293,6 +305,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A2000000000000000000000000000003 /* SpotifyClientLyricsTests.swift in Sources */,
+				A2000000000000000000000000000010 /* SpotifyConnectionLauncher.swift in Sources */,
+				A2000000000000000000000000000009 /* SpotifyConnectionTests.swift in Sources */,
 				D2000000000000000000000000000001 /* ModelTests.swift in Sources */,
 				D2000000000000000000000000000002 /* PlaybackTests.swift in Sources */,
 				D2000000000000000000000000000003 /* LyricsTests.swift in Sources */,

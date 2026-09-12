@@ -589,6 +589,22 @@ final class PlaybackTests: XCTestCase {
         XCTAssertTrue(pendingLyricsCancelled)
     }
 
+    func testStartingWhilePausedFetchesLyricsWithoutResumingPlayback() async {
+        let manager = ControlledMusicManager()
+        let state = AppState(musicManager: manager)
+        defer { state.shutdown() }
+        _ = await eventually { manager.playbackCallCount == 1 }
+        manager.resolveNextPlayback(with: .init(track: makeTrack(source: .spotify, isPlaying: false), issue: nil))
+        let lookupStarted = await eventually { manager.lyricsCallCount == 1 }
+        XCTAssertTrue(lookupStarted)
+        manager.resolveLyrics(forTrackNamed: "Track", with: (
+            Lyrics(lines: [LyricsLine(timeMs: 0, text: "Paused line")]), "Spotify 클라이언트"
+        ))
+        let displayed = await eventually { state.statusText == "Paused line" }
+        XCTAssertTrue(displayed)
+        XCTAssertEqual(state.scheduledRefreshInterval, 3)
+    }
+
     func testInstrumentalGapUsesIdleIconAndSeekingRestoresLyrics() async {
         let manager = ControlledMusicManager()
         let state = AppState(musicManager: manager)

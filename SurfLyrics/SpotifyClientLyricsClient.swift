@@ -4,44 +4,23 @@ protocol SpotifyClientLyricsProviding: Sendable {
     func fetch(for track: MusicTrack) async -> LyricsFetchResult
 }
 
-enum SpotifyClientBridgeError: Error {
-    case unavailable
-    case invalidResponse
-}
-
-struct SpotifyClientTarget: Decodable, Sendable {
-    let type: String
-    let url: String
-    let webSocketDebuggerUrl: String?
-
-    var validatedWebSocketURL: URL? {
-        guard type == "page", let page = URL(string: url),
-            page.host == "xpui.app.spotify.com",
-            ["https", "http"].contains(page.scheme),
-            let rawSocket = webSocketDebuggerUrl, let socket = URL(string: rawSocket),
-            socket.scheme == "ws", socket.host == "127.0.0.1",
-            socket.port == SpotifyClientLyricsClient.port,
-            socket.user == nil, socket.password == nil,
-            socket.path.hasPrefix("/devtools/page/"),
-            socket.query == nil, socket.fragment == nil
-        else { return nil }
-        return socket
-    }
-}
-
 actor SpotifyClientLyricsClient: SpotifyClientLyricsProviding {
-    static let port = 43827
+    static let port = SpotifyClientEndpoint.port
     private let session: URLSession
     private let bridgeSource: String?
+    private let connection: (any SpotifyConnectionPreparing)?
+    private let evaluator: (@Sendable (String) async throws -> Data)?
+    private let warmupDelay: @Sendable () async throws -> Void
 
-    init() {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 2
-        configuration.timeoutIntervalForResource = 12
-        configuration.httpShouldSetCookies = false
-        configuration.httpCookieStorage = nil
-        configuration.urlCache = nil
-        session = URLSession(configuration: configuration, delegate: LocalOnlySessionDelegate(), delegateQueue: nil)
+    init(
+        connection: (any SpotifyConnectionPreparing)? = nil,
+        evaluator: (@Sendable (String) async throws -> Data)? = nil,
+        warmupDelay: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .seconds(1)) }
+    ) {
+        self.connection = connection
+        self.evaluator = evaluator
+        self.warmupDelay = warmupDelay
+        session = SpotifyClientEndpoint.makeSession()
         bridgeSource = Bundle.main.url(forResource: "SpotifyClientBridge", withExtension: "js")
             .flatMap { try? String(contentsOf: $0, encoding: .utf8) }
     }
@@ -51,24 +30,37 @@ actor SpotifyClientLyricsClient: SpotifyClientLyricsProviding {
             let id = track.sourceTrackID, Self.isValidTrackID(id)
         else { return .notFound }
         guard !Task.isCancelled, let bridgeSource else { return .transientFailure }
-
-        do {
-            let value = try await evaluate("\(bridgeSource)(\"\(id)\")")
-            try Task.checkCancellation()
-            return Self.decode(value, expectedTrack: track)
-        } catch {
-            // Do not log CDP responses or request objects, which can contain client internals.
-            return .transientFailure
+        if let connection {
+            guard await connection.ensureReady(for: track), !Task.isCancelled else { return .transientFailure }
         }
+
+        for attempt in 0..<4 {
+            let result: LyricsFetchResult
+            do {
+                let expression = "\(bridgeSource)(\"\(id)\")"
+                let value: Data
+                if let evaluator {
+                    value = try await evaluator(expression)
+                } else {
+                    value = try await evaluate(expression)
+                }
+                try Task.checkCancellation()
+                result = Self.decode(value, expectedTrack: track)
+            } catch {
+                // Do not log CDP responses or request objects, which can contain client internals.
+                result = .transientFailure
+            }
+            guard !Task.isCancelled else { return .transientFailure }
+            // The page can appear in CDP before Spotify's authenticated lyrics client is ready.
+            guard result == .transientFailure, attempt < 3,
+                let connection, await connection.isWarmingUp else { return result }
+            do { try await warmupDelay() } catch { return .transientFailure }
+        }
+        return .transientFailure
     }
 
     private func evaluate(_ expression: String) async throws -> Data {
-        let targetURL = URL(string: "http://127.0.0.1:\(Self.port)/json/list")!
-        let (data, response) = try await session.data(from: targetURL)
-        guard (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 1_000_000,
-            let targets = try? JSONDecoder().decode([SpotifyClientTarget].self, from: data),
-            let socketURL = targets.compactMap(\.validatedWebSocketURL).first
-        else { throw SpotifyClientBridgeError.unavailable }
+        let socketURL = try await SpotifyClientEndpoint.debuggerURL(using: session)
         try Task.checkCancellation()
 
         let socket = session.webSocketTask(with: socketURL)
@@ -164,16 +156,5 @@ private struct ClientLyricsPayload: Decodable {
     struct Line: Decodable {
         let startTimeMs: String
         let words: String
-    }
-}
-
-private final class LocalOnlySessionDelegate: NSObject, URLSessionTaskDelegate {
-    func urlSession(
-        _ session: URLSession, task: URLSessionTask,
-        willPerformHTTPRedirection response: HTTPURLResponse,
-        newRequest request: URLRequest,
-        completionHandler: @escaping (URLRequest?) -> Void
-    ) {
-        completionHandler(nil)
     }
 }

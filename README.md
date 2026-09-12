@@ -1,62 +1,65 @@
+<p align="center">
+  <img src="docs/assets/surflyrics.png" width="144" alt="SurfLyrics">
+  <img src="docs/assets/helper.png" width="144" alt="SurfLyrics Connection Helper">
+</p>
+
 # SurfLyrics
 
-Personal macOS menu-bar app for displaying time-synced lyrics from the user's Spotify desktop client. Spotify client lyrics take priority; LRCLIB and Musixmatch remain optional fallback sources. This project is no longer intended as an App Store distribution workflow.
+Spotify에서 듣고 있는 곡의 동기화 가사를 macOS 메뉴 막대에 표시하는 개인용 앱입니다.
 
-## Spotify desktop connection
+**Spotify 클라이언트 → LRCLIB → Musixmatch** 순서로 가사를 찾습니다. 간주에는 대기 상태와 같은 큰 음표를 표시하고, 다음 가사가 시작되면 다시 텍스트로 바뀝니다. 시간 정보가 없는 가사는 재생 위치에 맞춘 가사로 표시하지 않습니다.
 
-The personal-use adapter runs a narrowly scoped request inside the signed-in Spotify client through a local Chrome DevTools Protocol connection. The Spotify session makes its normal lyrics request. Only the requested track ID, synchronization type, lyric lines and timestamps are returned to SurfLyrics. Spotify cookies and access tokens are not copied, stored or logged by the adapter.
+## 설치
 
-The adapter is verified with **Spotify 1.2.99.317**. The module layout is version-dependent, so repeat the real client acceptance check below after updates. After incompatible Spotify updates, the adapter fails without displaying unverified lyrics.
+**Apple Silicon Mac · macOS 27 이상**이 필요합니다. Spotify 데스크톱 앱에 로그인되어 있어야 합니다.
 
-The connection uses `127.0.0.1:43827`. SurfLyrics does not open this port, patch Spotify, change its preferences, or restart playback automatically. Enabling the debug connection allows other processes on the same Mac to access the Spotify session, so it must be an explicit local setup step. Do not expose the port to a network or use a wildcard remote origin.
+1. TestFlight에서 이 변경이 포함된 **SurfLyrics** 빌드를 설치합니다.
+2. **SurfLyrics Connection Helper.app**을 `/Applications`에 한 번 설치합니다.
+3. SurfLyrics 설정 → **가사 소스**에서 **Spotify 가사 자동 연결 (개인용)**을 켭니다.
 
-After approval, completely quit Spotify and start it for this session with:
+이후 터미널을 실행하거나 곡마다 가사를 가져올 필요가 없습니다. 연결이 필요하면 앱이 도우미를 실행하고, 도우미가 Spotify를 잠시 재시작한 뒤 종료됩니다. 기존 연결이 있으면 그대로 사용합니다.
 
-```sh
-open -a Spotify --args --remote-debugging-address=127.0.0.1 --remote-debugging-port=43827
-```
+**[다른 Mac에 설치하기 →](docs/INSTALL.md)** · **[개발 및 검증 →](docs/DEVELOPMENT.md)**
 
-Verify with `lsof` that the listener is bound only to loopback; if it is not, quit Spotify immediately and do not use the connection. No persistent launch configuration is installed. To remove the connection, quit Spotify and reopen it normally, then verify that port 43827 is closed.
+## 도우미 설치 파일 만들기
 
-In SurfLyrics, enable **Spotify 클라이언트 우선 (개인용)** under **설정 → 가사 소스**, then select **현재 곡 가사 다시 조회**. **현재 표시** shows the same text and source used by the menu bar. Opening the running app again also opens Settings. The app keeps Spotify's timestamps, including timed blank lines, and does not invent synchronization for plain lyrics. The Spotify source can be disabled independently of the fallback providers.
-
-Enabled sources are queried in this order: **Spotify client → LRCLIB → Musixmatch**. A successful source stops the search. Missing or temporarily unavailable sources fall through to the next source; reconnecting Spotify takes priority even when fallback lyrics are already cached. Alternate Spotify metadata is resolved only after a fallback lookup misses, and each fallback finishes its matching attempts before the next source runs.
-
-Timed blank lines and music-note-only lines use the same 16-point `music.note` icon as the idle state. The next timed lyric restores the normal text. LRC blank timestamps are preserved so the previous lyric does not remain on screen through an instrumental gap; music symbols embedded in actual lyrics are preserved.
-
-## Code structure
-
-- `LyricsProvider`: source order and result types.
-- `LyricsService`: source selection and alternate-metadata retries.
-- `LyricsCache`: bounded caching, expiration and shared-request cancellation.
-- `LyricsPayloadDecoder`: provider response validation and decoding.
-- Each client owns its transport and provider-specific lookup sequence; `StatusTextFormatter` owns instrumental-marker presentation.
-
-## Verification
+빌드할 Mac에는 **Xcode 27**과 이 프로젝트의 Apple 서명 인증서가 필요합니다. 설치할 Mac에는 Xcode가 필요하지 않습니다.
 
 ```sh
-node --test scripts/spotify-client-bridge.test.mjs
-xcodebuild test -project SurfLyrics.xcodeproj -scheme SurfLyrics -destination 'platform=macOS'
+git clone https://github.com/aloedawn/SurfLyrics.git
+cd SurfLyrics
+bash scripts/package-helper.sh
 ```
 
-With the local client connection enabled, the diagnostic below evaluates the same bridge resource shipped in the app. It prints only status, track ID, synchronization type and timestamp counts. An optional second argument writes lyrics to a new file outside this repository, with owner-only permissions.
+결과는 `build/SurfLyrics-Helper-1.0-macOS-arm64.dmg`와 SHA-256 체크섬입니다. 다른 Mac으로 옮겨 도우미를 응용 프로그램 폴더에 드래그합니다. 빌드 결과는 저장소에 포함하지 않습니다.
+
+기본 서명은 `Apple Development`입니다. Developer ID 서명을 사용하려면 다음처럼 지정합니다.
 
 ```sh
-node scripts/spotify-client-probe.mjs 6vgarqZvEEzWUgCK45gCfz
+SURFLYRICS_SIGNING_IDENTITY='Developer ID Application: Your Name (2RDF6J3XVV)' \
+  bash scripts/package-helper.sh
 ```
 
-Acceptance requires `found`, the requested Spotify ID, `LINE_SYNCED`, valid timestamps, and a visible comparison between Spotify and the running SurfLyrics app while the song plays. Also check seeking, pause/resume and changing tracks. Automated fixtures do not establish catalog-wide or 100% Spotify coverage.
+개발용 서명과 Apple 공증은 다릅니다. 이 스크립트는 공증이나 GitHub Release 게시를 자동 실행하지 않습니다. 다른 Mac의 최초 실행 승인과 공증 배포 방법은 [설치 안내](docs/INSTALL.md)를 참고하세요.
 
-## Current evidence (2026-09-12)
+## 동작과 제한
 
-- Spotify visibly displayed Musixmatch lyrics for An da eun's “Faded Words” (`6vgarqZvEEzWUgCK45gCfz`).
-- LRCLIB returned plain lyrics without timestamps. The existing Musixmatch desktop macro endpoint returned an unrelated track for the tested metadata and Spotify-ID requests.
-- The installed Spotify track-page code uses its authenticated request builder and returns `lyrics.syncType` and `lyrics.lines`. The personal adapter follows that builder call. Live validation found that an empty `/image/` suffix returned 404; using `/track/{trackId}` successfully retrieved lyrics.
-- The real client returned `LINE_SYNCED`, 28 ordered lines, first timestamp 16,520 ms and last timestamp 227,210 ms, including the final timed blank line.
-- A signed Debug build displayed source **Spotify 클라이언트** through the app's real Swift transport. Its current-display preview matched Spotify at approximately 0:26 and 2:33. Seeking while paused to 2:00 changed both displays to the instrumental marker; the position remained fixed while paused, and lyrics advanced after resume.
-- Switching from Saebit's “Melody of the Stars” (LRCLIB fallback) back to “Faded Words” selected the Spotify client source and replaced the previous track's lyrics. This is sampled evidence, not a claim of complete catalog coverage.
-- No Spotify session credentials or real lyric payloads are committed. The temporary connection is session-only; the installed Spotify app and its persistent launch configuration are unchanged.
-- The refactor passes 92 macOS tests, including source priority, recovery ahead of cached fallbacks, timed blank-line retention and instrumental-to-lyric transitions. The bridge's 5 JavaScript tests also pass.
-- In the signed refactored app, seeking “Faded Words” to 2:00 showed the large `music.note` image with accessibility label **간주**, while retaining source **Spotify 클라이언트**. The preview and menu bar use the same icon name and size.
+- 본 앱은 샌드박스와 TestFlight 배포를 유지합니다. 도우미는 별도로 설치하며 관리자 권한, 로그인 항목, 상주 서비스가 필요하지 않습니다.
+- 재연결 중 같은 곡이 선택되어 있으면 재생 위치와 재생·일시정지 상태를 복구합니다. 사용자가 바꾼 곡을 이전 곡으로 되돌리지 않습니다.
+- 연결 실패 시 켜져 있는 다음 가사 소스로 넘어갑니다. 반복 재시작을 막기 위해 자동 재시도에는 대기 시간이 있습니다.
+- 도우미는 `127.0.0.1:43827`에만 연결을 엽니다. 같은 Mac의 다른 프로세스도 이 디버깅 연결에 접근할 수 있습니다. 자동 연결을 끄면 이후 준비를 중단하며, Spotify를 완전히 종료하면 연결도 닫힙니다.
+- Spotify 세션 안에서 가사를 요청하며 쿠키와 접근 토큰을 복사하거나 저장하지 않습니다. Spotify 내부 구조 변경으로 연결이 깨질 수 있어 **모든 곡의 100% 수신을 보장하지 않습니다**.
 
-External App Store Connect and Xcode Cloud settings have not been changed. Any retirement of an existing cloud distribution workflow is a separate operational action.
+## 프로젝트 구성
+
+| 경로 | 내용 |
+| --- | --- |
+| `SurfLyrics/` | 메뉴 막대 앱, 가사 공급자, 자동 연결, Icon Composer 원본 |
+| `SpotifyConnectionHelper/` | 연결 준비 후 종료하는 도우미와 아이콘 원본 |
+| `SurfLyricsTests/` | 가사 매칭·순서·취소·연결 실패 등 핵심 회귀 검사 |
+| `scripts/` | 도우미 빌드·패키징과 브리지 검사 |
+| `docs/` | 설치·개발 안내와 아이콘 미리보기 |
+
+## 라이선스
+
+[GNU GPL v3](LICENSE). 가사의 권리는 각 권리자에게 있으며, 이 저장소에는 실제 가사나 Spotify 인증 정보가 포함되어 있지 않습니다.

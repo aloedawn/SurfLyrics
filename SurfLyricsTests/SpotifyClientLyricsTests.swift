@@ -4,6 +4,52 @@ import XCTest
 final class SpotifyClientLyricsTests: XCTestCase {
     private let trackID = "6vgarqZvEEzWUgCK45gCfz"
 
+    @MainActor
+    func testFreshConnectionWaitsForClientWarmupBeforeFallingBack() async throws {
+        let responses = ClientResponseSequence([
+            try payload(status: "unsupported"), try payload(status: "transientFailure"), try payload(),
+        ])
+        let client = SpotifyClientLyricsClient(connection: WarmupConnection(isWarmingUp: true),
+            evaluator: { _ in await responses.next() }, warmupDelay: {})
+        let result = await client.fetch(for: track())
+        XCTAssertEqual(result.lyrics?.lines.first?.text, "Line")
+        let count = await responses.count
+        XCTAssertEqual(count, 3)
+    }
+
+    @MainActor
+    func testConfirmedMissingLyricsSkipWarmupRetries() async throws {
+        let responses = ClientResponseSequence([try payload(status: "notFound")])
+        let client = SpotifyClientLyricsClient(connection: WarmupConnection(isWarmingUp: true),
+            evaluator: { _ in await responses.next() }, warmupDelay: {})
+        let result = await client.fetch(for: track())
+        XCTAssertEqual(result, .notFound)
+        let count = await responses.count
+        XCTAssertEqual(count, 1)
+    }
+
+    @MainActor
+    func testStableConnectionFailureDoesNotTriggerWarmupRetries() async throws {
+        let responses = ClientResponseSequence([try payload(status: "transientFailure")])
+        let client = SpotifyClientLyricsClient(connection: WarmupConnection(isWarmingUp: false),
+            evaluator: { _ in await responses.next() }, warmupDelay: {})
+        let result = await client.fetch(for: track())
+        XCTAssertEqual(result, .transientFailure)
+        let count = await responses.count
+        XCTAssertEqual(count, 1)
+    }
+
+    @MainActor
+    func testWarmupRetriesAreBoundedForIncompatibleClients() async throws {
+        let responses = ClientResponseSequence(Array(repeating: try payload(status: "unsupported"), count: 10))
+        let client = SpotifyClientLyricsClient(connection: WarmupConnection(isWarmingUp: true),
+            evaluator: { _ in await responses.next() }, warmupDelay: {})
+        let result = await client.fetch(for: track())
+        XCTAssertEqual(result, .transientFailure)
+        let count = await responses.count
+        XCTAssertEqual(count, 4)
+    }
+
     func testClientTimesAndBlankLinesArePreserved() throws {
         let result = SpotifyClientLyricsClient.decode(try payload(lines: [
             ["startTimeMs": "1025", "words": "First"],
@@ -133,6 +179,23 @@ final class SpotifyClientLyricsTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: [
             "status": status, "trackID": id ?? trackID, "syncType": syncType, "lines": lines,
         ])
+    }
+}
+
+@MainActor
+private final class WarmupConnection: SpotifyConnectionPreparing {
+    let isWarmingUp: Bool
+    init(isWarmingUp: Bool) { self.isWarmingUp = isWarmingUp }
+    func ensureReady(for track: MusicTrack) async -> Bool { true }
+}
+
+private actor ClientResponseSequence {
+    private var responses: [Data]
+    private(set) var count = 0
+    init(_ responses: [Data]) { self.responses = responses }
+    func next() -> Data {
+        count += 1
+        return responses.isEmpty ? Data() : responses.removeFirst()
     }
 }
 

@@ -64,6 +64,7 @@ struct BehaviorSettingsPane: View {
 
 struct LyricsSettingsPane: View {
     @ObservedObject var appState: AppState
+    @ObservedObject private var connection = SpotifyClientConnection.shared
     @AppStorage(AppPreferenceKey.lyricsSourceSpotifyClient) private var useSpotifyClient = true
     @AppStorage(AppPreferenceKey.lyricsSourceLRCLIB) private var useLRCLIB = true
     @AppStorage(AppPreferenceKey.lyricsSourceMusixmatch) private var useMusixmatch = true
@@ -71,11 +72,25 @@ struct LyricsSettingsPane: View {
 
     var body: some View {
         SettingsPane(title: "가사 소스") {
-            Toggle("Spotify 클라이언트 우선 (개인용)", isOn: $useSpotifyClient)
-            Text("Spotify → LRCLIB → Musixmatch 순서로 켜진 소스에서 동기화 가사를 찾습니다. Spotify 로컬 연결 설정 후 다시 조회해 주세요.")
+            Toggle("Spotify 가사 자동 연결 (개인용)", isOn: $useSpotifyClient)
+            Text("Spotify → LRCLIB → Musixmatch 순서로 켜진 소스에서 동기화 가사를 찾습니다.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if useSpotifyClient {
+                Text(connection.state.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if connection.state == .helperRequired {
+                    Text("SurfLyrics 연결 도우미를 응용 프로그램 폴더에 한 번 설치하면 이후 자동으로 연결됩니다.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Text("연결 준비가 필요할 때 Spotify가 잠시 재시작됩니다. Spotify를 종료하면 로컬 연결도 닫힙니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Button("현재 곡 가사 다시 조회") {
+                connection.retry()
                 notifyLyricsSourcesChanged()
             }
             VStack(alignment: .leading, spacing: 6) {

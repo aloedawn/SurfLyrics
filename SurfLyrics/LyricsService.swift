@@ -25,7 +25,7 @@ final class LyricsService {
         let decoder = decoder ?? LyricsPayloadDecoder()
         self.preferences = preferences
         self.cache = cache ?? LyricsCache()
-        self.spotifyClient = spotifyClient ?? SpotifyClientLyricsClient()
+        self.spotifyClient = spotifyClient ?? SpotifyClientLyricsClient(connection: SpotifyClientConnection.shared)
         lrclibClient = LRCLIBClient(urlSession: urlSession, decoder: decoder)
         musixmatchClient = MusixmatchClient(
             preferences: preferences,

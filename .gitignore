@@ -10,6 +10,12 @@ xcuserdata/
 SurfLyrics.xcodeproj/xcuserdata/
 SurfLyrics.xcodeproj/project.xcworkspace/xcuserdata/
 
+# Local build and verification artifacts
+*.xcresult/
+*.dmg
+*.dmg.sha256
+*.log
+
 # Swift Package Manager
 .build/
 

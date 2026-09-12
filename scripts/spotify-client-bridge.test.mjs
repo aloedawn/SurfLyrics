@@ -2,9 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
-import { bridgeURL, targetSocket } from "./spotify-client-probe.mjs";
 
-const source = await readFile(bridgeURL, "utf8");
+const source = await readFile(new URL("../SurfLyrics/SpotifyClientBridge.js", import.meta.url), "utf8");
 const trackID = "6vgarqZvEEzWUgCK45gCfz";
 
 function fixture({ hostname = "xpui.app.spotify.com", status, syncType = "LINE_SYNCED", supported = true } = {}) {
@@ -61,12 +60,4 @@ test("wrong pages, invalid IDs and unsupported runtimes fail before requesting l
     const { calls, extract } = fixture();
     assert.equal((await extract(`${trackID}\"`)).status, "unsupported");
     assert.equal(calls.length, 0);
-});
-
-test("the diagnostic can connect only to the chosen local Spotify page", () => {
-    const target = { type: "page", url: "https://xpui.app.spotify.com/index.html", webSocketDebuggerUrl: "ws://127.0.0.1:43827/devtools/page/123" };
-    assert.ok(targetSocket(target));
-    assert.equal(targetSocket({ ...target, url: "https://example.com" }), null);
-    assert.equal(targetSocket({ ...target, webSocketDebuggerUrl: "ws://example.com:43827/devtools/page/123" }), null);
-    assert.equal(targetSocket({ ...target, webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/page/123" }), null);
 });

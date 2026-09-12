@@ -277,6 +277,11 @@ final class AppState: ObservableObject {
             lyricsQueryIdentity = nil
             setSourceText(textFormatter.sourceDescription(for: track, lyricsSource: nil))
         }
+        if track.itemKind.supportsLyricsLookup, currentLyrics == nil,
+            (!hasFinishedLyricsLookup || lyricsQueryIdentity != track.lyricsQueryIdentity)
+        {
+            loadLyrics(for: track)
+        }
         if sourceText == nil {
             setSourceText(textFormatter.sourceDescription(for: track, lyricsSource: nil))
         }

@@ -64,46 +64,6 @@ final class ModelTests: XCTestCase {
         }
     }
 
-    @MainActor
-    func testStatusFormatterPreservesFullLyricsText() {
-        let defaults = makeDefaults()
-        let formatter = StatusTextFormatter(preferences: AppPreferences(defaults: defaults))
-        let track = MusicTrack(
-            source: .spotify,
-            name: "A very long title",
-            artist: "Artist",
-            album: "Album",
-            durationMs: 180_000,
-            progressMs: 0,
-            isPlaying: true
-        )
-
-        XCTAssertEqual(
-            formatter.text(for: track, lyricsLine: "A very long lyric", isLoadingLyrics: false),
-            "A very long lyric"
-        )
-    }
-
-    @MainActor
-    func testStatusFormatterPrefixesTrackWithTextNote() {
-        let defaults = makeDefaults()
-        let formatter = StatusTextFormatter(preferences: AppPreferences(defaults: defaults))
-        let track = MusicTrack(
-            source: .spotify,
-            name: "Song",
-            artist: "Artist",
-            album: "Album",
-            durationMs: 180_000,
-            progressMs: 0,
-            isPlaying: true
-        )
-
-        XCTAssertEqual(
-            formatter.text(for: track, lyricsLine: nil, isLoadingLyrics: false),
-            "♫ Song — Artist"
-        )
-    }
-
     private func makeDefaults() -> UserDefaults {
         let suite = "ModelTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

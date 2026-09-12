@@ -1,19 +1,25 @@
 {
   "features" : [
+    "refractivity",
     "specular-location"
   ],
   "fill" : {
-    "automatic-gradient" : "srgb:0.04500,0.57000,0.52000,1.00000"
+    "automatic-gradient" : "srgb:0.04500,0.40000,0.59000,1.00000"
   },
   "groups" : [
     {
       "layers" : [
         {
-          "image-name" : "Ocean.svg",
-          "name" : "Ocean"
+          "image-name" : "Receiver.svg",
+          "name" : "Receiver"
         }
       ],
-      "name" : "Ocean",
+      "name" : "Receiver",
+      "refractivity" : {
+        "depth" : 0,
+        "enabled" : true,
+        "strength" : 0.5
+      },
       "shadow" : {
         "kind" : "neutral",
         "opacity" : 0.35
@@ -27,11 +33,11 @@
     {
       "layers" : [
         {
-          "image-name" : "Melody.svg",
-          "name" : "Melody"
+          "image-name" : "Connection.svg",
+          "name" : "Connection"
         }
       ],
-      "name" : "Melody",
+      "name" : "Connection",
       "shadow" : {
         "kind" : "neutral",
         "opacity" : 0.35
