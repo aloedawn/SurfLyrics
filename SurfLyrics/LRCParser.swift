@@ -3,9 +3,9 @@ import Foundation
 enum LRCParser {
     private static let regexes: [(expression: NSRegularExpression, hasFraction: Bool)] = {
         [
-            (#"\[(\d+):(\d+)\.(\d+)\](.+)"#, true),
-            (#"\[(\d+):(\d+):(\d+)\](.+)"#, true),
-            (#"\[(\d+):(\d+)\](.+)"#, false),
+            (#"\[(\d+):(\d+)\.(\d+)\](.*)"#, true),
+            (#"\[(\d+):(\d+):(\d+)\](.*)"#, true),
+            (#"\[(\d+):(\d+)\](.*)"#, false),
         ].compactMap { pattern, hasFraction in
             (try? NSRegularExpression(pattern: pattern)).map {
                 (expression: $0, hasFraction: hasFraction)
@@ -48,7 +48,7 @@ enum LRCParser {
         let textRangeIndex = hasFraction ? 4 : 3
         let text = nsLine.substring(with: match.range(at: textRangeIndex))
             .trimmingCharacters(in: .whitespaces)
-        guard seconds < 60, !text.isEmpty else { return nil }
+        guard seconds < 60 else { return nil }
 
         var milliseconds = (minutes * 60 + seconds) * 1000
         if hasFraction {

@@ -20,6 +20,18 @@ Verify with `lsof` that the listener is bound only to loopback; if it is not, qu
 
 In SurfLyrics, enable **Spotify 클라이언트 우선 (개인용)** under **설정 → 가사 소스**, then select **현재 곡 가사 다시 조회**. **현재 표시** shows the same text and source used by the menu bar. Opening the running app again also opens Settings. The app keeps Spotify's timestamps, including timed blank lines, and does not invent synchronization for plain lyrics. The Spotify source can be disabled independently of the fallback providers.
 
+Enabled sources are queried in this order: **Spotify client → LRCLIB → Musixmatch**. A successful source stops the search. Missing or temporarily unavailable sources fall through to the next source; reconnecting Spotify takes priority even when fallback lyrics are already cached. Alternate Spotify metadata is resolved only after a fallback lookup misses, and each fallback finishes its matching attempts before the next source runs.
+
+Timed blank lines and music-note-only lines use the same 16-point `music.note` icon as the idle state. The next timed lyric restores the normal text. LRC blank timestamps are preserved so the previous lyric does not remain on screen through an instrumental gap; music symbols embedded in actual lyrics are preserved.
+
+## Code structure
+
+- `LyricsProvider`: source order and result types.
+- `LyricsService`: source selection and alternate-metadata retries.
+- `LyricsCache`: bounded caching, expiration and shared-request cancellation.
+- `LyricsPayloadDecoder`: provider response validation and decoding.
+- Each client owns its transport and provider-specific lookup sequence; `StatusTextFormatter` owns instrumental-marker presentation.
+
 ## Verification
 
 ```sh
@@ -44,5 +56,7 @@ Acceptance requires `found`, the requested Spotify ID, `LINE_SYNCED`, valid time
 - A signed Debug build displayed source **Spotify 클라이언트** through the app's real Swift transport. Its current-display preview matched Spotify at approximately 0:26 and 2:33. Seeking while paused to 2:00 changed both displays to the instrumental marker; the position remained fixed while paused, and lyrics advanced after resume.
 - Switching from Saebit's “Melody of the Stars” (LRCLIB fallback) back to “Faded Words” selected the Spotify client source and replaced the previous track's lyrics. This is sampled evidence, not a claim of complete catalog coverage.
 - No Spotify session credentials or real lyric payloads are committed. The temporary connection is session-only; the installed Spotify app and its persistent launch configuration are unchanged.
+- The refactor passes 92 macOS tests, including source priority, recovery ahead of cached fallbacks, timed blank-line retention and instrumental-to-lyric transitions. The bridge's 5 JavaScript tests also pass.
+- In the signed refactored app, seeking “Faded Words” to 2:00 showed the large `music.note` image with accessibility label **간주**, while retaining source **Spotify 클라이언트**. The preview and menu bar use the same icon name and size.
 
 External App Store Connect and Xcode Cloud settings have not been changed. Any retirement of an existing cloud distribution workflow is a separate operational action.

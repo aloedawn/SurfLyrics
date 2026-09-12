@@ -589,6 +589,31 @@ final class PlaybackTests: XCTestCase {
         XCTAssertTrue(pendingLyricsCancelled)
     }
 
+    func testInstrumentalGapUsesIdleIconAndSeekingRestoresLyrics() async {
+        let manager = ControlledMusicManager()
+        let state = AppState(musicManager: manager)
+        defer { state.shutdown() }
+        _ = await eventually { manager.playbackCallCount == 1 }
+        manager.resolveNextPlayback(with: .init(track: makeTrack(source: .spotify, isPlaying: true), issue: nil))
+        _ = await eventually { manager.lyricsCallCount == 1 }
+        manager.resolveLyrics(forTrackNamed: "Track", with: (Lyrics(lines: [
+            LyricsLine(timeMs: 1_000, text: "♪"),
+            LyricsLine(timeMs: 2_000, text: "Voice resumes"),
+        ]), "Spotify 클라이언트"))
+        let gapDisplayed = await eventually { state.statusText == "" && state.sourceText?.contains("Spotify 클라이언트") == true }
+        XCTAssertTrue(gapDisplayed)
+        XCTAssertEqual(state.scheduledRefreshInterval, 1)
+
+        state.requestPlaybackRefresh(preferredPlayer: .spotify)
+        _ = await eventually { manager.playbackCallCount == 2 }
+        let soughtTrack = MusicTrack(source: .spotify, name: "Track", artist: "Artist", album: "Album",
+            durationMs: 180_000, progressMs: 3_000, isPlaying: false)
+        manager.resolveNextPlayback(with: .init(track: soughtTrack, issue: nil))
+        let voiceDisplayed = await eventually { state.statusText == "Voice resumes" }
+        XCTAssertTrue(voiceDisplayed)
+        XCTAssertEqual(state.sourceText, "재생 앱: Spotify · 가사 소스: Spotify 클라이언트")
+    }
+
     func testTimerReschedulesForIdleMissingLyricsAndUpcomingLine() async {
         let idleManager = ControlledMusicManager()
         let idleState = AppState(musicManager: idleManager)

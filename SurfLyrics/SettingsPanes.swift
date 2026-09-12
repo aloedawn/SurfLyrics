@@ -72,7 +72,7 @@ struct LyricsSettingsPane: View {
     var body: some View {
         SettingsPane(title: "가사 소스") {
             Toggle("Spotify 클라이언트 우선 (개인용)", isOn: $useSpotifyClient)
-            Text("연결된 Spotify가 제공하는 시간 정보로 가사를 표시합니다. 로컬 연결 설정 후 다시 조회해 주세요.")
+            Text("Spotify → LRCLIB → Musixmatch 순서로 켜진 소스에서 동기화 가사를 찾습니다. Spotify 로컬 연결 설정 후 다시 조회해 주세요.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Button("현재 곡 가사 다시 조회") {
@@ -82,8 +82,14 @@ struct LyricsSettingsPane: View {
                 Text("현재 표시")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text(appState.statusText.isEmpty ? "재생 중인 음악이 없습니다." : appState.statusText)
-                    .textSelection(.enabled)
+                if appState.statusText.isEmpty {
+                    Image(systemName: MusicNoteAppearance.symbolName)
+                        .font(.system(size: MusicNoteAppearance.pointSize, weight: .regular))
+                        .accessibilityLabel(appState.sourceText == nil ? "대기 중" : "간주")
+                } else {
+                    Text(appState.statusText)
+                        .textSelection(.enabled)
+                }
                 if let source = appState.sourceText {
                     Text(source)
                         .font(.caption)

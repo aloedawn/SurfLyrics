@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A2000000000000000000000000000006 /* LyricsPayloadDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000000000006 /* LyricsPayloadDecoder.swift */; };
+		A2000000000000000000000000000005 /* LyricsCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000000000005 /* LyricsCache.swift */; };
+		A2000000000000000000000000000004 /* LyricsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000000000004 /* LyricsProvider.swift */; };
 		A2000000000000000000000000000001 /* SpotifyClientLyricsClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000000000001 /* SpotifyClientLyricsClient.swift */; };
 		A2000000000000000000000000000002 /* SpotifyClientBridge.js in Resources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000000000002 /* SpotifyClientBridge.js */; };
 		A2000000000000000000000000000003 /* SpotifyClientLyricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000000000003 /* SpotifyClientLyricsTests.swift */; };
@@ -49,6 +52,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		B2000000000000000000000000000006 /* LyricsPayloadDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsPayloadDecoder.swift; sourceTree = "<group>"; };
+		B2000000000000000000000000000005 /* LyricsCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsCache.swift; sourceTree = "<group>"; };
+		B2000000000000000000000000000004 /* LyricsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsProvider.swift; sourceTree = "<group>"; };
 		B2000000000000000000000000000001 /* SpotifyClientLyricsClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyClientLyricsClient.swift; sourceTree = "<group>"; };
 		B2000000000000000000000000000002 /* SpotifyClientBridge.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = SpotifyClientBridge.js; sourceTree = "<group>"; };
 		B2000000000000000000000000000003 /* SpotifyClientLyricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyClientLyricsTests.swift; sourceTree = "<group>"; };
@@ -109,6 +115,9 @@
 			isa = PBXGroup;
 			children = (
 				B2000000000000000000000000000001 /* SpotifyClientLyricsClient.swift */,
+				B2000000000000000000000000000006 /* LyricsPayloadDecoder.swift */,
+				B2000000000000000000000000000005 /* LyricsCache.swift */,
+				B2000000000000000000000000000004 /* LyricsProvider.swift */,
 				B2000000000000000000000000000002 /* SpotifyClientBridge.js */,
 				704B87CE326C464DB11512D1E7850791 /* main.swift */,
 				7FA10487D3904638AF1FCCE0E4078893 /* AppDelegate.swift */,
@@ -252,6 +261,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				A2000000000000000000000000000001 /* SpotifyClientLyricsClient.swift in Sources */,
+				A2000000000000000000000000000006 /* LyricsPayloadDecoder.swift in Sources */,
+				A2000000000000000000000000000005 /* LyricsCache.swift in Sources */,
+				A2000000000000000000000000000004 /* LyricsProvider.swift in Sources */,
 				0AE7A0B9A48348609DB4C8ED48E1D585 /* main.swift in Sources */,
 				E4ED22681B2C4FA987645742EB4C8CE3 /* AppDelegate.swift in Sources */,
 				A1000000000000000000000000000001 /* AppCommands.swift in Sources */,

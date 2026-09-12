@@ -1,6 +1,11 @@
 import AppKit
 import Combine
 
+enum MusicNoteAppearance {
+    static let symbolName = "music.note"
+    static let pointSize: CGFloat = 16
+}
+
 @MainActor
 final class StatusBarController {
     private static let idleStatusItemExtraWidth: CGFloat = 2
@@ -15,11 +20,11 @@ final class StatusBarController {
         actions: StatusMenuActions
     ) {
         let symbolConfiguration = NSImage.SymbolConfiguration(
-            pointSize: 16,
+            pointSize: MusicNoteAppearance.pointSize,
             weight: .regular
         )
         idleStatusImage = NSImage(
-            systemSymbolName: "music.note",
+            systemSymbolName: MusicNoteAppearance.symbolName,
             accessibilityDescription: "음악"
         )?.withSymbolConfiguration(symbolConfiguration)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)

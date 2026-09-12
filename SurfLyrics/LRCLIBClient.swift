@@ -28,6 +28,19 @@ final class LRCLIBClient {
         self.decoder = decoder
     }
 
+    func fetch(for track: MusicTrack) async -> LyricsFetchResult {
+        let exact = await fetchExact(for: track)
+        guard !Task.isCancelled else { return .transientFailure }
+        guard exact == .notFound else { return exact }
+
+        let artistSearch = await search(for: track, includeArtist: true)
+        guard !Task.isCancelled else { return .transientFailure }
+        guard artistSearch == .notFound else { return artistSearch }
+
+        let titleSearch = await search(for: track, includeArtist: false)
+        return Task.isCancelled ? .transientFailure : titleSearch
+    }
+
     func fetchExact(for track: MusicTrack) async -> LyricsFetchResult {
         let trackName = track.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let artist = track.artist.trimmingCharacters(in: .whitespacesAndNewlines)

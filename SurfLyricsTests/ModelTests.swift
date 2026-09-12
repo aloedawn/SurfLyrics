@@ -43,6 +43,27 @@ final class ModelTests: XCTestCase {
         )
     }
 
+    func testLRCBlankTimestampsClearLyricsDuringInstrumentalGaps() {
+        let lyrics = Lyrics(lines: LRCParser.parse("[00:01.00]Voice\n[00:02.00]\n[00:03]  \n[00:04.00]Next"))
+        XCTAssertEqual(lyrics.lines.count, 4)
+        XCTAssertEqual(lyrics.lookup(at: 2_500), LyricsLookup(currentText: "", nextLineTimeMs: 3_000))
+        XCTAssertEqual(lyrics.lookup(at: 4_000).currentText, "Next")
+    }
+
+    @MainActor
+    func testInstrumentalMarkersUseTheSameEmptyTitleAsTheIdleIcon() {
+        let defaults = makeDefaults()
+        let formatter = StatusTextFormatter(preferences: AppPreferences(defaults: defaults))
+        let track = MusicTrack(source: .spotify, name: "Song", artist: "Artist", album: "Album",
+            durationMs: 180_000, progressMs: 0, isPlaying: true)
+        for marker in ["", " \n", "♪", "♫ ♬", "🎵", "🎶", "♪\u{FE0F}"] {
+            XCTAssertEqual(formatter.text(for: track, lyricsLine: marker, isLoadingLyrics: false), "")
+        }
+        for lyric in ["♪ Sing with me", "Music ♫", "[Instrumental love]"] {
+            XCTAssertEqual(formatter.text(for: track, lyricsLine: lyric, isLoadingLyrics: false), lyric)
+        }
+    }
+
     @MainActor
     func testStatusFormatterPreservesFullLyricsText() {
         let defaults = makeDefaults()

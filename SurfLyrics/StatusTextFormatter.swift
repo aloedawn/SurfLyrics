@@ -11,7 +11,14 @@ struct StatusTextFormatter {
         guard !isLoadingLyrics, let lyricsLine else {
             return trackDescription(for: track)
         }
-        return lyricsLine
+        // A timed blank or music-note-only line is an instrumental gap, rendered as the idle icon.
+        return Self.isInstrumental(lyricsLine) ? "" : lyricsLine
+    }
+
+    private static func isInstrumental(_ text: String) -> Bool {
+        let symbols = CharacterSet(charactersIn: "♪♫♬♩🎵🎶\u{FE0E}\u{FE0F}")
+            .union(.whitespacesAndNewlines)
+        return text.unicodeScalars.allSatisfy { symbols.contains($0) }
     }
 
     func sourceDescription(for track: MusicTrack, lyricsSource: String?) -> String {

@@ -365,6 +365,70 @@ final class LyricsServiceTests: XCTestCase {
         MockURLProtocol.state.reset()
     }
 
+    func testSpotifyMissFallsBackToLRCLIBWithoutRequestingMusixmatch() async {
+        let defaults = makeDefaults()
+        defaults.set(true, forKey: AppPreferenceKey.lyricsSourceSpotifyClient)
+        let client = SequencedSpotifyClient([.notFound])
+        let service = makeService(defaults: defaults, spotifyClient: client)
+        MockURLProtocol.state.setHandler { request in
+            XCTAssertEqual(request.url?.host, "lrclib.net")
+            return (200, Data(Self.lrclibExactResponse.utf8))
+        }
+        let result = await service.getLyrics(for: makeTrack())
+        XCTAssertEqual(result.1, "LRCLIB")
+        XCTAssertEqual(result.0?.lines.first?.text, "Hello")
+        let clientRequests = await client.requestCount
+        XCTAssertEqual(clientRequests, 1)
+        XCTAssertEqual(MockURLProtocol.state.requestCount, 1)
+    }
+
+    func testSpotifyAndLRCLIBMissesFallBackToMusixmatchInOrder() async {
+        let defaults = makeDefaults()
+        defaults.set(true, forKey: AppPreferenceKey.lyricsSourceSpotifyClient)
+        AppPreferences(defaults: defaults).storeMusixmatchToken("cached-token", expiresAt: Date().addingTimeInterval(600))
+        let client = SequencedSpotifyClient([.notFound])
+        let service = makeService(defaults: defaults, spotifyClient: client)
+        MockURLProtocol.state.setHandler { request in
+            if request.url?.host == "lrclib.net" { return (404, Data()) }
+            return (200, Data(Self.musixmatchResponse.utf8))
+        }
+        let result = await service.getLyrics(for: makeTrack())
+        XCTAssertEqual(result.1, "Musixmatch")
+        let clientRequests = await client.requestCount
+        XCTAssertEqual(clientRequests, 1)
+        XCTAssertEqual(MockURLProtocol.state.requestHosts, [
+            "lrclib.net", "lrclib.net", "lrclib.net", "apic-desktop.musixmatch.com",
+        ])
+    }
+
+    func testReconnectedSpotifyTakesPriorityOverCachedFallbackLyrics() async {
+        let defaults = makeDefaults()
+        defaults.set(true, forKey: AppPreferenceKey.lyricsSourceSpotifyClient)
+        let clientLyrics = Lyrics(lines: [LyricsLine(timeMs: 1_000, text: "From client")])
+        let client = SequencedSpotifyClient([.transientFailure, .found(clientLyrics)])
+        let service = makeService(defaults: defaults, spotifyClient: client)
+        MockURLProtocol.state.setHandler { _ in (200, Data(Self.lrclibExactResponse.utf8)) }
+
+        let offline = await service.getLyrics(for: makeTrack())
+        let connected = await service.getLyrics(for: makeTrack())
+        XCTAssertEqual(offline.1, "LRCLIB")
+        XCTAssertEqual(connected.1, "Spotify 클라이언트")
+        XCTAssertEqual(connected.0, clientLyrics)
+        XCTAssertEqual(MockURLProtocol.state.requestCount, 1)
+        let clientRequests = await client.requestCount
+        XCTAssertEqual(clientRequests, 2)
+    }
+
+    func testFallbackDecoderPreservesGapsWithoutAcceptingEmptyLyrics() async {
+        let decoder = LyricsPayloadDecoder()
+        let withGap = Data(#"{"syncedLyrics":"[00:01.00]Voice\n[00:02.00]\n[00:03.00]Next"}"#.utf8)
+        let result = await decoder.decodeLRCLIB(withGap)
+        XCTAssertEqual(result.lyrics?.lookup(at: 2_500).currentText, "")
+        let blanksOnly = Data(#"{"syncedLyrics":"[00:01.00]\n[00:02.00]"}"#.utf8)
+        let empty = await decoder.decodeLRCLIB(blanksOnly)
+        XCTAssertEqual(empty, .notFound)
+    }
+
     func testLRCLIBExactRequestUsesFullSignatureAndSessionCache() async {
         let defaults = makeDefaults()
         defaults.set(true, forKey: AppPreferenceKey.lyricsSourceLRCLIB)
@@ -856,12 +920,15 @@ final class LyricsServiceTests: XCTestCase {
         )
     }
 
-    private func makeService(defaults: UserDefaults) -> LyricsService {
+    private func makeService(
+        defaults: UserDefaults, spotifyClient: (any SpotifyClientLyricsProviding)? = nil
+    ) -> LyricsService {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
         return LyricsService(
             preferences: AppPreferences(defaults: defaults),
-            urlSession: URLSession(configuration: configuration)
+            urlSession: URLSession(configuration: configuration),
+            spotifyClient: spotifyClient
         )
     }
 
@@ -932,6 +999,9 @@ private final class MockURLProtocol: URLProtocol {
         private let lock = NSLock()
         private var handler: Handler?
         private var count = 0
+        private var hosts: [String] = []
+
+        var requestHosts: [String] { lock.withLock { hosts } }
 
         var requestCount: Int {
             lock.withLock { count }
@@ -944,6 +1014,7 @@ private final class MockURLProtocol: URLProtocol {
         func response(for request: URLRequest) -> (Int, Data) {
             lock.withLock {
                 count += 1
+                hosts.append(request.url?.host ?? "")
                 return handler?(request) ?? (500, Data())
             }
         }
@@ -952,7 +1023,20 @@ private final class MockURLProtocol: URLProtocol {
             lock.withLock {
                 handler = nil
                 count = 0
+                hosts = []
             }
         }
+    }
+}
+
+private actor SequencedSpotifyClient: SpotifyClientLyricsProviding {
+    private var results: [LyricsFetchResult]
+    private(set) var requestCount = 0
+
+    init(_ results: [LyricsFetchResult]) { self.results = results }
+
+    func fetch(for track: MusicTrack) async -> LyricsFetchResult {
+        requestCount += 1
+        return results.isEmpty ? .notFound : results.removeFirst()
     }
 }

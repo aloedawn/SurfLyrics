@@ -40,6 +40,17 @@ struct AppPreferences {
         bool(forKey: AppPreferenceKey.lyricsSourceMusixmatch, defaultValue: true)
     }
 
+    func lyricsProviders(for track: MusicTrack) -> [LyricsProvider] {
+        guard track.itemKind.supportsLyricsLookup else { return [] }
+        return LyricsProvider.allCases.filter { provider in
+            switch provider {
+            case .spotifyClient: usesSpotifyClient && track.source == .spotify && track.itemKind == .track
+            case .lrclib: usesLRCLIB
+            case .musixmatch: usesMusixmatch
+            }
+        }
+    }
+
     var musixmatchTokenExists: Bool {
         musixmatchToken != nil
     }
