@@ -5,9 +5,9 @@ import SwiftUI
 final class SettingsWindowController {
     private var window: NSWindow?
 
-    func show() {
+    func show(appState: AppState) {
         if window == nil {
-            window = makeWindow()
+            window = makeWindow(appState: appState)
         }
 
         window?.center()
@@ -15,8 +15,8 @@ final class SettingsWindowController {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    private func makeWindow() -> NSWindow {
-        let controller = NSHostingController(rootView: SettingsView())
+    private func makeWindow(appState: AppState) -> NSWindow {
+        let controller = NSHostingController(rootView: SettingsView(appState: appState))
         let window = NSWindow(contentViewController: controller)
         window.title = "설정"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]

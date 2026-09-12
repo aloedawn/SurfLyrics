@@ -2,7 +2,7 @@ import Combine
 import Foundation
 
 @MainActor
-final class AppState {
+final class AppState: ObservableObject {
     private struct ScheduledLyricsDisplay {
         let trackID: TrackIdentity
         let progressMs: Int

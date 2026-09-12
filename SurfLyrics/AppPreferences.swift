@@ -4,6 +4,7 @@ enum AppPreferenceKey {
     static let displayMode = "displayMode"
     static let lyricsSourceLRCLIB = "lyricsSourceLRCLIB"
     static let lyricsSourceMusixmatch = "lyricsSourceMusixmatch"
+    static let lyricsSourceSpotifyClient = "lyricsSourceSpotifyClient"
 
     fileprivate static let musixmatchToken = "musixmatch.token"
     fileprivate static let musixmatchTokenExpiry = "musixmatch.tokenExpiry"
@@ -29,6 +30,10 @@ struct AppPreferences {
 
     var usesLRCLIB: Bool {
         bool(forKey: AppPreferenceKey.lyricsSourceLRCLIB, defaultValue: true)
+    }
+
+    var usesSpotifyClient: Bool {
+        bool(forKey: AppPreferenceKey.lyricsSourceSpotifyClient, defaultValue: true)
     }
 
     var usesMusixmatch: Bool {

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
+    let appState: AppState
     @State private var selection: SettingsSection? = .display
 
     var body: some View {
@@ -27,7 +28,9 @@ struct SettingsView: View {
         case .behavior:
             BehaviorSettingsPane()
         case .lyrics:
-            LyricsSettingsPane()
+            ScrollView {
+                LyricsSettingsPane(appState: appState)
+            }
         case .about:
             AboutSettingsPane()
         }

@@ -407,6 +407,7 @@ final class LyricsService {
     private let lrclibClient: LRCLIBClient
     private let musixmatchClient: MusixmatchClient
     private let spotifyMetadataResolver: SpotifyMetadataResolver
+    private let spotifyClient: any SpotifyClientLyricsProviding
     private let cache: LyricsCache
     private let signposter = OSSignposter(
         subsystem: "com.aloedawn.surflyrics",
@@ -417,12 +418,14 @@ final class LyricsService {
         preferences: AppPreferences = AppPreferences(),
         urlSession: URLSession? = nil,
         cache: LyricsCache? = nil,
-        decoder: LyricsPayloadDecoder? = nil
+        decoder: LyricsPayloadDecoder? = nil,
+        spotifyClient: (any SpotifyClientLyricsProviding)? = nil
     ) {
         let urlSession = urlSession ?? LyricsSessionFactory.make()
         let decoder = decoder ?? LyricsPayloadDecoder()
         self.preferences = preferences
         self.cache = cache ?? LyricsCache()
+        self.spotifyClient = spotifyClient ?? SpotifyClientLyricsClient()
         lrclibClient = LRCLIBClient(urlSession: urlSession, decoder: decoder)
         musixmatchClient = MusixmatchClient(
             preferences: preferences,
@@ -436,6 +439,15 @@ final class LyricsService {
         let interval = signposter.beginInterval("LyricsLoad")
         defer { signposter.endInterval("LyricsLoad", interval) }
 
+        if preferences.usesSpotifyClient, track.source == .spotify, track.itemKind == .track {
+            // Do not retain connection-dependent misses. Connecting Spotify must allow an immediate retry.
+            let result = await spotifyClient.fetch(for: track)
+            guard !Task.isCancelled else { return (nil, nil) }
+            if case let .found(lyrics) = result {
+                return (lyrics, "Spotify 클라이언트")
+            }
+        }
+
         if preferences.usesLRCLIB {
             let result = await lyricsFromLRCLIB(for: track)
             if let lyrics = result {
@@ -443,6 +455,8 @@ final class LyricsService {
             }
             guard !Task.isCancelled else { return (nil, nil) }
         }
+
+        guard preferences.usesLRCLIB || preferences.usesMusixmatch else { return (nil, nil) }
 
         let shouldResolveSpotifyMetadata = track.source == .spotify
             && track.itemKind == .track

@@ -63,12 +63,34 @@ struct BehaviorSettingsPane: View {
 }
 
 struct LyricsSettingsPane: View {
+    @ObservedObject var appState: AppState
+    @AppStorage(AppPreferenceKey.lyricsSourceSpotifyClient) private var useSpotifyClient = true
     @AppStorage(AppPreferenceKey.lyricsSourceLRCLIB) private var useLRCLIB = true
     @AppStorage(AppPreferenceKey.lyricsSourceMusixmatch) private var useMusixmatch = true
     @State private var musixmatchTokenExists = AppPreferences().musixmatchTokenExists
 
     var body: some View {
         SettingsPane(title: "가사 소스") {
+            Toggle("Spotify 클라이언트 우선 (개인용)", isOn: $useSpotifyClient)
+            Text("연결된 Spotify가 제공하는 시간 정보로 가사를 표시합니다. 로컬 연결 설정 후 다시 조회해 주세요.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("현재 곡 가사 다시 조회") {
+                notifyLyricsSourcesChanged()
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("현재 표시")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(appState.statusText.isEmpty ? "재생 중인 음악이 없습니다." : appState.statusText)
+                    .textSelection(.enabled)
+                if let source = appState.sourceText {
+                    Text(source)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Divider()
             Toggle("LRCLIB (공개 API)", isOn: $useLRCLIB)
             Toggle("Musixmatch (비공개 API)", isOn: $useMusixmatch)
 
@@ -84,6 +106,9 @@ struct LyricsSettingsPane: View {
                     .foregroundStyle(.red)
                 }
             }
+        }
+        .onChange(of: useSpotifyClient) {
+            notifyLyricsSourcesChanged()
         }
         .onChange(of: useLRCLIB) {
             notifyLyricsSourcesChanged()
@@ -113,6 +138,8 @@ struct AboutSettingsPane: View {
                 Text("SurfLyrics")
                     .font(.title3)
                     .fontWeight(.semibold)
+                Text("개인용 Spotify 가사 표시 앱")
+                    .foregroundStyle(.secondary)
                 Text("버전 \(version) (\(build))")
                     .foregroundStyle(.secondary)
             }

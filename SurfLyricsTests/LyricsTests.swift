@@ -869,6 +869,7 @@ final class LyricsServiceTests: XCTestCase {
         let suite = "LyricsServiceTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
+        defaults.set(false, forKey: AppPreferenceKey.lyricsSourceSpotifyClient)
         return defaults
     }
 
