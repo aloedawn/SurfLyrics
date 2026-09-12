@@ -25,7 +25,18 @@ final class MusixmatchClient {
     }
 
     func fetch(for track: MusicTrack) async -> LyricsFetchResult {
-        guard let token = await validToken() else { return .transientFailure }
+        guard !Task.isCancelled, let token = await validToken() else {
+            return .transientFailure
+        }
+        return await fetch(for: track, token: token, canRefreshToken: true)
+    }
+
+    private func fetch(
+        for track: MusicTrack,
+        token: String,
+        canRefreshToken: Bool
+    ) async -> LyricsFetchResult {
+        guard !Task.isCancelled else { return .transientFailure }
 
         var components = URLComponents(
             string: "https://apic-desktop.musixmatch.com/ws/1.1/macro.subtitles.get"
@@ -41,6 +52,13 @@ final class MusixmatchClient {
             URLQueryItem(name: "usertoken", value: token),
             URLQueryItem(name: "app_id", value: "web-desktop-app-v1.0"),
         ]
+        if track.source == .spotify, track.itemKind == .track,
+            let trackID = track.sourceTrackID, !trackID.isEmpty
+        {
+            components.queryItems?.append(
+                URLQueryItem(name: "track_spotify_id", value: trackID)
+            )
+        }
         guard let url = components.url else { return .transientFailure }
 
         var request = URLRequest(url: url)
@@ -52,6 +70,16 @@ final class MusixmatchClient {
             let (data, response) = try await urlSession.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
                 return .transientFailure
+            }
+            let needsTokenRefresh = await decoder.musixmatchRequiresTokenRefresh(data)
+            if httpResponse.statusCode == 401 || needsTokenRefresh {
+                preferences.clearMusixmatchToken()
+                guard canRefreshToken, !Task.isCancelled,
+                    let refreshedToken = await validToken()
+                else {
+                    return .transientFailure
+                }
+                return await fetch(for: track, token: refreshedToken, canRefreshToken: false)
             }
             if httpResponse.statusCode == 404 {
                 return .notFound
@@ -84,7 +112,7 @@ final class MusixmatchClient {
         }
 
         var request = URLRequest(url: url)
-        request.cachePolicy = .useProtocolCachePolicy
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 10.0
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
 

@@ -316,6 +316,13 @@ actor LyricsPayloadDecoder {
         let interval = signposter.beginInterval("MusixmatchDecode")
         defer { signposter.endInterval("MusixmatchDecode", interval) }
 
+        // Musixmatch reports API errors inside HTTP 200 responses, sometimes with body: [].
+        for call in [nil, "matcher.track.get", "track.subtitles.get"] as [String?] {
+            if let status = musixmatchStatusCode(data, call: call), status != 200 {
+                return status == 404 ? .notFound : .transientFailure
+            }
+        }
+
         guard let payload = try? JSONDecoder().decode(MusixmatchPayload.self, from: data),
             let calls = payload.message?.body?.macroCalls
         else {
@@ -331,8 +338,16 @@ actor LyricsPayloadDecoder {
             albumName: matchedTrack.album,
             durationMs: milliseconds(fromSeconds: matchedTrack.length?.value)
         )
-        guard matcher.isLikelyMatch(candidate, for: expectedTrack) else {
-            return .notFound
+        if expectedTrack.source == .spotify, expectedTrack.itemKind == .track,
+            let expectedID = expectedTrack.sourceTrackID, !expectedID.isEmpty,
+            let matchedID = matchedTrack.spotifyID, !matchedID.isEmpty
+        {
+            // A provider-confirmed Spotify ID remains stable across translated metadata.
+            guard matchedID == expectedID else { return .notFound }
+        } else {
+            guard matcher.isLikelyMatch(candidate, for: expectedTrack) else {
+                return .notFound
+            }
         }
 
         guard let lrc = calls.subtitles?.message?.body?.subtitleList?.first?.subtitle?.body,
@@ -344,8 +359,31 @@ actor LyricsPayloadDecoder {
     }
 
     func decodeMusixmatchToken(_ data: Data) -> String? {
-        try? JSONDecoder().decode(MusixmatchTokenPayload.self, from: data)
+        if let status = musixmatchStatusCode(data), status != 200 { return nil }
+        let token = try? JSONDecoder().decode(MusixmatchTokenPayload.self, from: data)
             .message?.body?.userToken
+        return token?.isEmpty == false ? token : nil
+    }
+
+    func musixmatchRequiresTokenRefresh(_ data: Data) -> Bool {
+        ([nil, "matcher.track.get", "track.subtitles.get"] as [String?]).contains {
+            musixmatchStatusCode(data, call: $0) == 401
+        }
+    }
+
+    private func musixmatchStatusCode(_ data: Data, call: String? = nil) -> Int? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            var message = root["message"] as? [String: Any]
+        else { return nil }
+        if let call {
+            guard let body = message["body"] as? [String: Any],
+                let calls = body["macro_calls"] as? [String: Any],
+                let result = calls[call] as? [String: Any],
+                let nestedMessage = result["message"] as? [String: Any]
+            else { return nil }
+            message = nestedMessage
+        }
+        return (message["header"] as? [String: Any])?["status_code"] as? Int
     }
 
     private func lyricsResult(from lrc: String) -> LyricsFetchResult {
@@ -565,12 +603,14 @@ private struct MusixmatchPayload: Decodable {
     }
 
     struct Track: Decodable {
+        let spotifyID: String?
         let name: String?
         let artist: String?
         let album: String?
         let length: FlexibleDouble?
 
         enum CodingKeys: String, CodingKey {
+            case spotifyID = "track_spotify_id"
             case name = "track_name"
             case artist = "artist_name"
             case album = "album_name"

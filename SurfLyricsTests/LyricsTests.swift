@@ -724,6 +724,138 @@ final class LyricsServiceTests: XCTestCase {
         XCTAssertEqual(MockURLProtocol.state.requestCount, 1)
     }
 
+    func testMusixmatchSendsSpotifyIDAndAcceptsConfirmedLocalizedMetadata() async {
+        let defaults = makeDefaults()
+        let preferences = AppPreferences(defaults: defaults)
+        preferences.storeMusixmatchToken("cached-token", expiresAt: Date().addingTimeInterval(600))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let client = MusixmatchClient(
+            preferences: preferences,
+            urlSession: URLSession(configuration: configuration),
+            decoder: LyricsPayloadDecoder()
+        )
+        MockURLProtocol.state.setHandler { request in
+            let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+            XCTAssertEqual(items?.first { $0.name == "track_spotify_id" }?.value, "StableTrack123")
+            return (200, Data(Self.musixmatchSpotifyIDResponse.utf8))
+        }
+        let result = await client.fetch(for: makeTrack(
+            sourceTrackID: "StableTrack123", name: "지역화된 제목", artist: "지역화된 가수"
+        ))
+        XCTAssertEqual(result, .found(Lyrics(lines: [LyricsLine(timeMs: 1_000, text: "Hello")])))
+        XCTAssertEqual(MockURLProtocol.state.requestCount, 1)
+    }
+
+    func testMusixmatchRejectsDifferentSpotifyIDEvenWhenMetadataMatches() async {
+        let result = await LyricsPayloadDecoder().decodeMusixmatch(
+            Data(Self.musixmatchSpotifyIDResponse.utf8),
+            expectedTrack: makeTrack(sourceTrackID: "DifferentTrack")
+        )
+        XCTAssertEqual(result, .notFound)
+    }
+
+    func testMusixmatchRejectsUnrelatedResponseForReportedSpotifyTrack() async {
+        let response = Self.musixmatchResponse
+            .replacingOccurrences(of: "\"Track\"", with: "\"NOKIA\"")
+            .replacingOccurrences(of: "\"Artist\"", with: "\"Drake\"")
+        let result = await LyricsPayloadDecoder().decodeMusixmatch(
+            Data(response.utf8),
+            expectedTrack: makeTrack(
+                sourceTrackID: "6vgarqZvEEzWUgCK45gCfz",
+                name: "Faded Words (My Royal Nemesis : Original Television Soundtrack)",
+                artist: "An da eun", durationMs: 246_660
+            )
+        )
+        XCTAssertEqual(result, .notFound)
+    }
+
+    func testMusixmatchRefreshesRejectedTokenInsideHTTP200AndRetries() async {
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: AppPreferenceKey.lyricsSourceLRCLIB)
+        let preferences = AppPreferences(defaults: defaults)
+        preferences.storeMusixmatchToken("rejected-token", expiresAt: Date().addingTimeInterval(600))
+        let service = makeService(defaults: defaults)
+        MockURLProtocol.state.setHandler { request in
+            if request.url?.lastPathComponent == "token.get" {
+                XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
+                return (200, Data(#"{"message":{"header":{"status_code":200},"body":{"user_token":"fresh-token"}}}"#.utf8))
+            }
+            let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+            if items?.first(where: { $0.name == "usertoken" })?.value == "rejected-token" {
+                return (200, Data(#"{"message":{"header":{"status_code":401,"hint":"renew"},"body":[]}}"#.utf8))
+            }
+            return (200, Data(Self.musixmatchResponse.utf8))
+        }
+        let result = await service.getLyrics(for: makeTrack())
+        XCTAssertEqual(result.0?.lines.first?.text, "Hello")
+        XCTAssertEqual(preferences.musixmatchToken, "fresh-token")
+        XCTAssertEqual(MockURLProtocol.state.requestCount, 3)
+    }
+
+    func testMusixmatchRefreshIsBoundedWhenNewTokenIsAlsoRejected() async {
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: AppPreferenceKey.lyricsSourceLRCLIB)
+        let preferences = AppPreferences(defaults: defaults)
+        preferences.storeMusixmatchToken("rejected-token", expiresAt: Date().addingTimeInterval(600))
+        let service = makeService(defaults: defaults)
+        MockURLProtocol.state.setHandler { request in
+            if request.url?.lastPathComponent == "token.get" {
+                return (200, Data(#"{"message":{"body":{"user_token":"also-rejected"}}}"#.utf8))
+            }
+            return (401, Data())
+        }
+        let result = await service.getLyrics(for: makeTrack())
+        XCTAssertNil(result.0)
+        XCTAssertNil(preferences.musixmatchToken)
+        XCTAssertEqual(MockURLProtocol.state.requestCount, 3)
+    }
+
+    func testMusixmatchNestedServiceFailureIsNotNegativeCached() async {
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: AppPreferenceKey.lyricsSourceLRCLIB)
+        AppPreferences(defaults: defaults).storeMusixmatchToken(
+            "cached-token", expiresAt: Date().addingTimeInterval(600)
+        )
+        let service = makeService(defaults: defaults)
+        MockURLProtocol.state.setHandler { _ in
+            (200, Data(#"{"message":{"header":{"status_code":200},"body":{"macro_calls":{"matcher.track.get":{"message":{"header":{"status_code":503},"body":[]}}}}}}"#.utf8))
+        }
+        let failed = await service.getLyrics(for: makeTrack())
+        XCTAssertNil(failed.0)
+        MockURLProtocol.state.setHandler { _ in (200, Data(Self.musixmatchResponse.utf8)) }
+        let recovered = await service.getLyrics(for: makeTrack())
+        XCTAssertEqual(recovered.0?.lines.first?.text, "Hello")
+        XCTAssertEqual(MockURLProtocol.state.requestCount, 2)
+    }
+
+    func testMusixmatchStatusesAreDecodedBeforeEmptyArrayBodies() async {
+        let decoder = LyricsPayloadDecoder()
+        let cases: [(Int, LyricsFetchResult)] = [
+            (401, .transientFailure), (403, .transientFailure),
+            (404, .notFound), (429, .transientFailure), (500, .transientFailure),
+        ]
+        for (code, expected) in cases {
+            let data = Data("{\"message\":{\"header\":{\"status_code\":\(code)},\"body\":[]}}".utf8)
+            let result = await decoder.decodeMusixmatch(data, expectedTrack: makeTrack())
+            XCTAssertEqual(result, expected)
+        }
+        let nested = Data(#"{"message":{"body":{"macro_calls":{"track.subtitles.get":{"message":{"header":{"status_code":401},"body":[]}}}}}}"#.utf8)
+        let needsRefresh = await decoder.musixmatchRequiresTokenRefresh(nested)
+        XCTAssertTrue(needsRefresh)
+        let token = await decoder.decodeMusixmatchToken(
+            Data(#"{"message":{"header":{"status_code":401},"body":{"user_token":"invalid"}}}"#.utf8)
+        )
+        XCTAssertNil(token)
+    }
+
+    nonisolated private static var musixmatchSpotifyIDResponse: String {
+        musixmatchResponse.replacingOccurrences(
+            of: "\"track_name\":\"Track\"",
+            with: "\"track_spotify_id\":\"StableTrack123\",\"track_name\":\"Track\""
+        )
+    }
+
     private func makeService(defaults: UserDefaults) -> LyricsService {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
