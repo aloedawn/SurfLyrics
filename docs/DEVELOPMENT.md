@@ -48,3 +48,9 @@ A locally signed, sandboxed Release app launched the installed helper from `/App
 ## Xcode Cloud
 
 The shared `SurfLyrics` scheme remains the TestFlight target. App Store Connect settings and Cloud build numbers are separate from `CURRENT_PROJECT_VERSION`; follow `AGENTS.md` before an explicit distribution run. Ordinary source pushes do not package or publish the helper.
+
+## Spotify 1.3 compatibility — 2026-09-28
+
+Spotify 1.3.0.277 renamed the chunk runtime to `rspackChunk` and changed the request-builder and lyrics-host module IDs to `48331` and `62192`. The old bridge returned `unsupported` while the local connection remained ready. The bridge now supports that adapter alongside the existing 1.2.99.317 adapter, validates the lyrics host, and continues to fail closed for unknown modules.
+
+All 105 Swift tests and 7 bridge tests passed, and the signed Release build succeeded. Evaluating the updated bridge in the running Spotify 1.3.0.277 client returned 28 ordered `LINE_SYNCED` lines for the same “Faded Words” track used above. This verifies live retrieval; display validation of the distributed TestFlight build remains pending.

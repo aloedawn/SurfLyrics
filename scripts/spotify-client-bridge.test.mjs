@@ -6,7 +6,9 @@ import vm from "node:vm";
 const source = await readFile(new URL("../SurfLyrics/SpotifyClientBridge.js", import.meta.url), "utf8");
 const trackID = "6vgarqZvEEzWUgCK45gCfz";
 
-function fixture({ hostname = "xpui.app.spotify.com", status, syncType = "LINE_SYNCED", supported = true } = {}) {
+function fixture({ hostname = "xpui.app.spotify.com", status, syncType = "LINE_SYNCED", supported = true,
+    version = "1.3", modulesAvailable = true, host = "https://spclient.wg.spotify.com/color-lyrics/v2",
+    brokenModernRuntime = false } = {}) {
     const calls = [];
     const builder = {};
     for (const name of ["withHost", "withPath", "withHeaders", "withQueryParameters", "withEndpointIdentifier"]) {
@@ -21,22 +23,44 @@ function fixture({ hostname = "xpui.app.spotify.com", status, syncType = "LINE_S
     const chunks = [];
     chunks.push = (chunk) => {
         if (supported) chunk[2]((id) => {
-            if (id === 22358) return { n: { getInstance: () => ({ build: () => builder }) } };
-            if (id === 52388) return { Hj: "client-lyrics-host" };
+            if (!modulesAvailable) throw new Error("Module changed");
+            if (id === (version === "1.3" ? 48331 : 22358)) return { n: { getInstance: () => ({ build: () => builder }) } };
+            if (id === (version === "1.3" ? 62192 : 52388)) return { Hj: host };
             throw new Error("Unexpected module");
         });
         Array.prototype.push.call(chunks, chunk);
     };
-    const extract = vm.runInNewContext(source, { location: { hostname }, rspackChunkclient_web: chunks });
-    return { calls, extract };
+    const context = { location: { hostname }, [version === "1.3" ? "rspackChunk" : "rspackChunkclient_web"]: chunks };
+    if (brokenModernRuntime) context.rspackChunk = [];
+    const extract = vm.runInNewContext(source, context);
+    return { calls, extract, chunks, context };
 }
 
-test("uses the client request builder and exports only timed lyric fields", async () => {
-    const { calls, extract } = fixture();
+for (const version of ["1.2", "1.3"]) test(`Spotify ${version} uses the client request builder and exports only timed lyric fields`, async () => {
+    const { calls, extract, chunks } = fixture({ version });
     const result = JSON.parse(JSON.stringify(await extract(trackID)));
     assert.deepEqual(result, { status: "found", trackID, syncType: "LINE_SYNCED", lines: [{ startTimeMs: "1025", words: "Synthetic line" }] });
     assert.equal(calls.find(([key]) => key === "withPath")[1], `/track/${trackID}`);
     assert.equal(JSON.stringify(result).includes("must-not-leave-client"), false);
+    assert.equal(chunks.length, 0);
+});
+
+test("an uninitialized modern runtime does not hide a supported legacy runtime", async () => {
+    const { extract, chunks, context } = fixture({ version: "1.2", brokenModernRuntime: true });
+    assert.equal((await extract(trackID)).status, "found");
+    assert.equal(chunks.length, 0);
+    assert.equal(context.rspackChunk.length, 0);
+});
+
+test("changed modules or lyrics hosts fail closed without making requests", async () => {
+    for (const version of ["1.2", "1.3"]) {
+        for (const options of [{ modulesAvailable: false }, { host: "https://example.com" }]) {
+            const { calls, extract, chunks } = fixture({ version, ...options });
+            assert.equal((await extract(trackID)).status, "unsupported");
+            assert.equal(calls.length, 0);
+            assert.equal(chunks.length, 0);
+        }
+    }
 });
 
 test("plain lyrics are not assigned invented timestamps", async () => {
