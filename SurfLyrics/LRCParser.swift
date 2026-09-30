@@ -43,19 +43,21 @@ enum LRCParser {
             return nil
         }
 
-        let minutes = Int(nsLine.substring(with: match.range(at: 1))) ?? 0
-        let seconds = Int(nsLine.substring(with: match.range(at: 2))) ?? 0
+        guard let minutes = Int(nsLine.substring(with: match.range(at: 1))),
+            let seconds = Int(nsLine.substring(with: match.range(at: 2))),
+            seconds < 60
+        else { return nil }
         let textRangeIndex = hasFraction ? 4 : 3
         let text = nsLine.substring(with: match.range(at: textRangeIndex))
             .trimmingCharacters(in: .whitespaces)
-        guard seconds < 60 else { return nil }
-
-        var milliseconds = (minutes * 60 + seconds) * 1000
-        if hasFraction {
-            milliseconds += fractionalMilliseconds(
-                nsLine.substring(with: match.range(at: 3))
-            )
-        }
+        let fraction = hasFraction
+            ? fractionalMilliseconds(nsLine.substring(with: match.range(at: 3))) : 0
+        let (minuteSeconds, minutesOverflow) = minutes.multipliedReportingOverflow(by: 60)
+        let (totalSeconds, secondsOverflow) = minuteSeconds.addingReportingOverflow(seconds)
+        let (wholeMilliseconds, millisecondsOverflow) = totalSeconds.multipliedReportingOverflow(by: 1000)
+        let (milliseconds, fractionOverflow) = wholeMilliseconds.addingReportingOverflow(fraction)
+        guard !minutesOverflow, !secondsOverflow, !millisecondsOverflow, !fractionOverflow
+        else { return nil }
         return LyricsLine(timeMs: milliseconds, text: text)
     }
 

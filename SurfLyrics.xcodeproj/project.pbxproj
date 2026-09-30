@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C41000000000000000000001 /* SharedRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = C41000000000000000000002 /* SharedRequest.swift */; };
 		A30000000000000000000001 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 8634CC9B2F866BB2008DDC84 /* AppIcon.icon */; };
 		A2000000000000000000000000000010 /* SpotifyConnectionLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000000000010 /* SpotifyConnectionLauncher.swift */; };
 		A2000000000000000000000000000009 /* SpotifyConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000000000009 /* SpotifyConnectionTests.swift */; };
@@ -56,6 +57,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		C41000000000000000000002 /* SharedRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedRequest.swift; sourceTree = "<group>"; };
 		B2000000000000000000000000000010 /* SpotifyConnectionLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../SpotifyConnectionHelper/SpotifyConnectionLauncher.swift"; sourceTree = "<group>"; };
 		B2000000000000000000000000000009 /* SpotifyConnectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SpotifyConnectionTests.swift"; sourceTree = "<group>"; };
 		B2000000000000000000000000000008 /* SpotifyClientConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyClientConnection.swift; sourceTree = "<group>"; };
@@ -126,6 +128,7 @@
 				B2000000000000000000000000000007 /* SpotifyClientEndpoint.swift */,
 				B2000000000000000000000000000006 /* LyricsPayloadDecoder.swift */,
 				B2000000000000000000000000000005 /* LyricsCache.swift */,
+				C41000000000000000000002 /* SharedRequest.swift */,
 				B2000000000000000000000000000004 /* LyricsProvider.swift */,
 				B2000000000000000000000000000002 /* SpotifyClientBridge.js */,
 				704B87CE326C464DB11512D1E7850791 /* main.swift */,
@@ -275,6 +278,7 @@
 				A2000000000000000000000000000007 /* SpotifyClientEndpoint.swift in Sources */,
 				A2000000000000000000000000000006 /* LyricsPayloadDecoder.swift in Sources */,
 				A2000000000000000000000000000005 /* LyricsCache.swift in Sources */,
+				C41000000000000000000001 /* SharedRequest.swift in Sources */,
 				A2000000000000000000000000000004 /* LyricsProvider.swift in Sources */,
 				0AE7A0B9A48348609DB4C8ED48E1D585 /* main.swift in Sources */,
 				E4ED22681B2C4FA987645742EB4C8CE3 /* AppDelegate.swift in Sources */,

@@ -359,6 +359,223 @@ final class LyricsCacheTests: XCTestCase {
 }
 
 @MainActor
+final class SharedRequestTests: XCTestCase {
+    func testConcurrentCallersShareWorkAndOneCancellationKeepsItAlive() async {
+        let request = SharedRequest<String>()
+        var continuation: CheckedContinuation<String?, Never>?
+        var loads = 0
+        var loaderWasCancelled = false
+        let first = Task {
+            await request.value {
+                loads += 1
+                let result = await withCheckedContinuation { continuation = $0 }
+                loaderWasCancelled = Task.isCancelled
+                return result
+            }
+        }
+        _ = await eventually { continuation != nil }
+        var secondStarted = false
+        let second = Task {
+            secondStarted = true
+            return await request.value { loads += 1; return "Duplicate" }
+        }
+        _ = await eventually { secondStarted }
+        first.cancel()
+        for _ in 0..<10 { await Task.yield() }
+        continuation?.resume(returning: "Shared")
+        let firstResult = await first.value
+        let secondResult = await second.value
+        XCTAssertNil(firstResult)
+        XCTAssertEqual(secondResult, "Shared")
+        XCTAssertEqual(loads, 1)
+        XCTAssertFalse(loaderWasCancelled)
+        XCTAssertFalse(request.isRunning)
+    }
+
+    func testCancelledOldCompletionCannotClearReplacementRequest() async {
+        let request = SharedRequest<String>()
+        var oldContinuation: CheckedContinuation<String?, Never>?
+        var newContinuation: CheckedContinuation<String?, Never>?
+        var oldLoaderWasCancelled = false
+        let old = Task {
+            await request.value {
+                let value = await withCheckedContinuation { oldContinuation = $0 }
+                oldLoaderWasCancelled = Task.isCancelled
+                return value
+            }
+        }
+        _ = await eventually { oldContinuation != nil }
+        old.cancel()
+        let cancelled = await eventually { !request.isRunning }
+        XCTAssertTrue(cancelled)
+        let replacement = Task {
+            await request.value { await withCheckedContinuation { newContinuation = $0 } }
+        }
+        _ = await eventually { newContinuation != nil }
+        oldContinuation?.resume(returning: "Stale")
+        let oldResult = await old.value
+        XCTAssertNil(oldResult)
+        XCTAssertTrue(oldLoaderWasCancelled)
+        XCTAssertTrue(request.isRunning)
+        newContinuation?.resume(returning: "Fresh")
+        let replacementResult = await replacement.value
+        XCTAssertEqual(replacementResult, "Fresh")
+        XCTAssertFalse(request.isRunning)
+    }
+
+    func testFailedWorkCanBeRetried() async {
+        let request = SharedRequest<String>()
+        let failure = await request.value { nil }
+        let success = await request.value { "Recovered" }
+        XCTAssertNil(failure)
+        XCTAssertEqual(success, "Recovered")
+    }
+
+    private func eventually(_ condition: @MainActor () -> Bool) async -> Bool {
+        for _ in 0..<1000 {
+            if condition() { return true }
+            await Task.yield()
+        }
+        return false
+    }
+}
+
+@MainActor
+final class AuxiliaryRequestTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        ControlledURLProtocol.state.reset()
+    }
+
+    func testConcurrentMetadataLookupsShareRequestAndKeepEachPlaybackSnapshot() async throws {
+        let resolver = SpotifyMetadataResolver(urlSession: session())
+        let firstTrack = track(progressMs: 1000, isPlaying: true)
+        let secondTrack = track(progressMs: 9000, isPlaying: false)
+        let first = Task { await resolver.resolve(firstTrack) }
+        let second = Task { await resolver.resolve(secondTrack) }
+        try await waitForRequests(1)
+        ControlledURLProtocol.state.completeFirst(data: Self.metadata)
+        let firstResult = await first.value
+        let secondResult = await second.value
+        XCTAssertEqual(firstResult?.name, "Canonical")
+        XCTAssertEqual(secondResult?.name, "Canonical")
+        XCTAssertEqual(firstResult?.progressMs, 1000)
+        XCTAssertEqual(secondResult?.progressMs, 9000)
+        XCTAssertEqual(secondResult?.isPlaying, false)
+        XCTAssertEqual(ControlledURLProtocol.state.requestCount, 1)
+        let cached = await resolver.resolve(firstTrack)
+        XCTAssertEqual(cached, firstResult)
+        XCTAssertEqual(ControlledURLProtocol.state.requestCount, 1)
+    }
+
+    func testConcurrentLyricsRequestsShareTokenRefresh() async throws {
+        let client = musixmatch()
+        let first = Task { await client.fetch(for: track()) }
+        let second = Task { await client.fetch(for: track()) }
+        try await waitForRequests(1)
+        ControlledURLProtocol.state.completeFirst(data: Self.token)
+        try await waitForRequests(3)
+        ControlledURLProtocol.state.completeFirst(data: Self.missingLyrics)
+        ControlledURLProtocol.state.completeFirst(data: Self.missingLyrics)
+        let firstResult = await first.value
+        let secondResult = await second.value
+        XCTAssertEqual(firstResult, .notFound)
+        XCTAssertEqual(secondResult, .notFound)
+        XCTAssertEqual(ControlledURLProtocol.state.requestCount, 3)
+    }
+
+    func testCancellingOneTokenCallerKeepsOtherLyricsRequestAlive() async throws {
+        let client = musixmatch()
+        let first = Task { await client.fetch(for: track()) }
+        let second = Task { await client.fetch(for: track()) }
+        try await waitForRequests(1)
+        first.cancel()
+        ControlledURLProtocol.state.completeFirst(data: Self.token)
+        try await waitForRequests(2)
+        ControlledURLProtocol.state.completeFirst(data: Self.missingLyrics)
+        let firstResult = await first.value
+        let secondResult = await second.value
+        XCTAssertEqual(firstResult, .transientFailure)
+        XCTAssertEqual(secondResult, .notFound)
+        XCTAssertEqual(ControlledURLProtocol.state.requestCount, 2)
+    }
+
+    func testCancellingLastMetadataCallerCancelsTransportAndAllowsRetry() async throws {
+        let resolver = SpotifyMetadataResolver(urlSession: session())
+        let first = Task { await resolver.resolve(track()) }
+        try await waitForRequests(1)
+        first.cancel()
+        let cancelled = await first.value
+        XCTAssertNil(cancelled)
+        XCTAssertEqual(ControlledURLProtocol.state.pendingCount, 0)
+        let retry = Task { await resolver.resolve(track()) }
+        try await waitForRequests(2)
+        ControlledURLProtocol.state.completeFirst(data: Self.metadata)
+        let result = await retry.value
+        XCTAssertEqual(result?.name, "Canonical")
+    }
+
+    func testLateTokenRejectionDoesNotInvalidateAlreadyRefreshedToken() async throws {
+        let defaults = UserDefaults(suiteName: "AuxiliaryRequestTests.\(UUID().uuidString)")!
+        let preferences = AppPreferences(defaults: defaults)
+        preferences.storeMusixmatchToken("old-token", expiresAt: Date().addingTimeInterval(600))
+        let client = musixmatch(preferences: preferences)
+        let first = Task { await client.fetch(for: track()) }
+        let second = Task { await client.fetch(for: track()) }
+        try await waitForRequests(2)
+        ControlledURLProtocol.state.completeFirst(status: 401, data: Data())
+        try await waitForRequests(3)
+        ControlledURLProtocol.state.completeFirst(path: "token.get", data: Self.token)
+        try await waitForRequests(4)
+        ControlledURLProtocol.state.completeFirst(status: 401, data: Data())
+        try await waitForRequests(5)
+        ControlledURLProtocol.state.completeFirst(data: Self.missingLyrics)
+        ControlledURLProtocol.state.completeFirst(data: Self.missingLyrics)
+        let firstResult = await first.value
+        let secondResult = await second.value
+        XCTAssertEqual(firstResult, .notFound)
+        XCTAssertEqual(secondResult, .notFound)
+        XCTAssertEqual(preferences.musixmatchToken, "shared-token")
+        XCTAssertEqual(ControlledURLProtocol.state.requestCount, 5)
+    }
+
+    private func waitForRequests(_ count: Int) async throws {
+        // Give both callers time to register before completing the controlled transport.
+        for _ in 0..<100 {
+            if ControlledURLProtocol.state.requestCount >= count {
+                try await Task.sleep(for: .milliseconds(10))
+                return
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("Timed out waiting for \(count) requests")
+        throw URLError(.timedOut)
+    }
+
+    private func session() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ControlledURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }
+
+    private func musixmatch(preferences: AppPreferences? = nil) -> MusixmatchClient {
+        let preferences = preferences ?? AppPreferences(defaults:
+            UserDefaults(suiteName: "AuxiliaryRequestTests.\(UUID().uuidString)")!
+        )
+        return MusixmatchClient(preferences: preferences, urlSession: session(), decoder: LyricsPayloadDecoder())
+    }
+
+    private func track(progressMs: Int = 0, isPlaying: Bool = true) -> MusicTrack {
+        MusicTrack(source: .spotify, sourceTrackID: "StableTrack123", name: "Track", artist: "Artist",
+                   album: "Album", durationMs: 180000, progressMs: progressMs, isPlaying: isPlaying)
+    }
+
+    nonisolated private static let metadata = Data(#"<script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"state":{"data":{"entity":{"type":"track","id":"StableTrack123","name":"Canonical","artists":[{"name":"Artist"}],"duration":180000}}}}}}</script>"#.utf8)
+    nonisolated private static let token = Data(#"{"message":{"header":{"status_code":200},"body":{"user_token":"shared-token"}}}"#.utf8)
+    nonisolated private static let missingLyrics = Data(#"{"message":{"header":{"status_code":404},"body":[]}}"#.utf8)
+}
+
+@MainActor
 final class LyricsServiceTests: XCTestCase {
     override func setUp() {
         super.setUp()
@@ -1086,5 +1303,51 @@ private actor SequencedSpotifyClient: SpotifyClientLyricsProviding {
     func fetch(for track: MusicTrack) async -> LyricsFetchResult {
         requestCount += 1
         return results.isEmpty ? .notFound : results.removeFirst()
+    }
+}
+
+private final class ControlledURLProtocol: URLProtocol {
+    static let state = State()
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() { Self.state.add(self) }
+    override func stopLoading() { Self.state.remove(self) }
+
+    private func complete(status: Int, data: Data) {
+        let response = HTTPURLResponse(url: request.url!, statusCode: status,
+                                       httpVersion: "HTTP/1.1", headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    final class State: @unchecked Sendable {
+        private let lock = NSLock()
+        private var pending: [ControlledURLProtocol] = []
+        private var count = 0
+
+        var requestCount: Int { lock.withLock { count } }
+        var pendingCount: Int { lock.withLock { pending.count } }
+
+        func add(_ request: ControlledURLProtocol) {
+            lock.withLock { pending.append(request); count += 1 }
+        }
+
+        func remove(_ request: ControlledURLProtocol) {
+            lock.withLock { pending.removeAll { $0 === request } }
+        }
+
+        func completeFirst(path: String? = nil, status: Int = 200, data: Data) {
+            let request: ControlledURLProtocol? = lock.withLock {
+                guard let index = pending.firstIndex(where: { path == nil || $0.request.url?.lastPathComponent == path })
+                else { return nil }
+                return pending.remove(at: index)
+            }
+            guard let request else { return XCTFail("No matching pending request") }
+            request.complete(status: status, data: data)
+        }
+
+        func reset() { lock.withLock { pending = []; count = 0 } }
     }
 }

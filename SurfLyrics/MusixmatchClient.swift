@@ -9,8 +9,7 @@ final class MusixmatchClient {
     private let urlSession: URLSession
     private let decoder: LyricsPayloadDecoder
     private let logger = Logger(subsystem: "com.aloedawn.surflyrics", category: "Musixmatch")
-    private var token: String?
-    private var tokenExpiry: Date?
+    private let tokenRequest = SharedRequest<String>()
 
     init(
         preferences: AppPreferences,
@@ -20,8 +19,6 @@ final class MusixmatchClient {
         self.preferences = preferences
         self.urlSession = urlSession
         self.decoder = decoder
-        token = preferences.musixmatchToken
-        tokenExpiry = preferences.musixmatchTokenExpiry
     }
 
     func fetch(for track: MusicTrack) async -> LyricsFetchResult {
@@ -72,8 +69,12 @@ final class MusixmatchClient {
                 return .transientFailure
             }
             let evaluation = await decoder.evaluateMusixmatch(data, expectedTrack: track)
+            guard !Task.isCancelled else { return .transientFailure }
             if httpResponse.statusCode == 401 || evaluation.requiresTokenRefresh {
-                preferences.clearMusixmatchToken()
+                // A late rejection of an old token must not invalidate a newer shared refresh.
+                if preferences.musixmatchToken == token {
+                    preferences.clearMusixmatchToken()
+                }
                 guard canRefreshToken, !Task.isCancelled,
                     let refreshedToken = await validToken()
                 else {
@@ -98,13 +99,17 @@ final class MusixmatchClient {
     }
 
     private func validToken() async -> String? {
-        token = preferences.musixmatchToken
-        tokenExpiry = preferences.musixmatchTokenExpiry
-
-        if let token, let tokenExpiry, Date() < tokenExpiry {
+        guard !Task.isCancelled else { return nil }
+        if let token = preferences.musixmatchToken,
+            let tokenExpiry = preferences.musixmatchTokenExpiry, Date() < tokenExpiry
+        {
             return token
         }
 
+        return await tokenRequest.value { await self.refreshToken() }
+    }
+
+    private func refreshToken() async -> String? {
         guard let url = URL(
             string: "https://apic-desktop.musixmatch.com/ws/1.1/token.get?app_id=web-desktop-app-v1.0"
         ) else {
@@ -125,10 +130,9 @@ final class MusixmatchClient {
                 logger.error("Musixmatch token refresh failed")
                 return nil
             }
+            guard !Task.isCancelled else { return nil }
 
             let expiry = Date().addingTimeInterval(3600)
-            self.token = token
-            tokenExpiry = expiry
             preferences.storeMusixmatchToken(token, expiresAt: expiry)
             return token
         } catch {

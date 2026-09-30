@@ -105,19 +105,26 @@ struct LyricsCandidateMatcher: Sendable {
     }
 
     private func score(_ candidate: LyricsCandidate, for track: PreparedTrack) -> Double? {
+        let durationSimilarity: Double?
+        if track.durationMs > 0, let candidateDuration = candidate.durationMs,
+            candidateDuration > 0
+        {
+            let difference = abs(Int64(track.durationMs) - Int64(candidateDuration))
+            let tolerance = Self.durationTolerance(expectedMs: track.durationMs)
+            guard difference <= Int64(tolerance) else { return nil }
+            durationSimilarity = 1.0 - Double(difference) / Double(tolerance)
+        } else {
+            durationSimilarity = nil
+        }
         guard track.editionTags == Self.editionTags(in: candidate.trackName) else {
             return nil
         }
 
         let candidateTitleTokens = Self.normalizedTokens(candidate.trackName)
         let candidateRemasterTokens = Self.remasterNormalizedTokens(candidateTitleTokens)
-        let titleSimilarity = max(
-            Self.similarity(track.titleTokens, candidateTitleTokens),
-            Self.similarity(track.remasterTitleTokens, candidateRemasterTokens)
-        )
-        let artistSimilarity = Self.similarity(
-            track.artistTokens,
-            Self.normalizedTokens(candidate.artistName)
+        let titleSimilarity = Self.titleSimilarity(
+            track.titleTokens, candidateTitleTokens,
+            remasterLeft: track.remasterTitleTokens, remasterRight: candidateRemasterTokens
         )
         guard titleSimilarity >= Self.minimumTitleSimilarity else { return nil }
         if min(track.remasterTitleTokens.count, candidateRemasterTokens.count) == 1,
@@ -126,6 +133,12 @@ struct LyricsCandidateMatcher: Sendable {
         {
             return nil
         }
+
+        let artistSimilarity = Self.similarity(
+            track.artistTokens,
+            Self.normalizedTokens(candidate.artistName)
+        )
+        guard artistSimilarity >= Self.minimumArtistSimilarity else { return nil }
 
         let albumSimilarity: Double?
         if let candidateAlbum = candidate.albumName,
@@ -140,10 +153,6 @@ struct LyricsCandidateMatcher: Sendable {
             albumSimilarity = nil
         }
 
-        guard artistSimilarity >= Self.minimumArtistSimilarity else {
-            return nil
-        }
-
         var weightedScore = titleSimilarity * Self.titleWeight
             + artistSimilarity * Self.artistWeight
         var availableWeight = Self.titleWeight + Self.artistWeight
@@ -153,14 +162,7 @@ struct LyricsCandidateMatcher: Sendable {
             availableWeight += Self.albumWeight
         }
 
-        if track.durationMs > 0, let candidateDuration = candidate.durationMs,
-            candidateDuration > 0
-        {
-            let difference = abs(Int64(track.durationMs) - Int64(candidateDuration))
-            let tolerance = Self.durationTolerance(expectedMs: track.durationMs)
-            guard difference <= Int64(tolerance) else { return nil }
-
-            let durationSimilarity = 1.0 - Double(difference) / Double(tolerance)
+        if let durationSimilarity {
             weightedScore += durationSimilarity * Self.durationWeight
             availableWeight += Self.durationWeight
         }
@@ -203,10 +205,20 @@ struct LyricsCandidateMatcher: Sendable {
     private static func titleSimilarity(_ lhs: String, _ rhs: String) -> Double {
         let leftTokens = normalizedTokens(lhs)
         let rightTokens = normalizedTokens(rhs)
-        return max(
-            similarity(leftTokens, rightTokens),
-            similarity(remasterNormalizedTokens(leftTokens), remasterNormalizedTokens(rightTokens))
+        return titleSimilarity(
+            leftTokens, rightTokens,
+            remasterLeft: remasterNormalizedTokens(leftTokens),
+            remasterRight: remasterNormalizedTokens(rightTokens)
         )
+    }
+
+    private static func titleSimilarity(
+        _ left: [String], _ right: [String],
+        remasterLeft: [String], remasterRight: [String]
+    ) -> Double {
+        let original = similarity(left, right)
+        guard original < 1, left != remasterLeft || right != remasterRight else { return original }
+        return max(original, similarity(remasterLeft, remasterRight))
     }
 
     private static func similarity(_ leftTokens: [String], _ rightTokens: [String]) -> Double {
@@ -217,10 +229,9 @@ struct LyricsCandidateMatcher: Sendable {
         let leftText = leftTokens.joined(separator: " ")
         let rightText = rightTokens.joined(separator: " ")
         let spacedEditScore = levenshteinSimilarity(leftText, rightText)
-        let compactEditScore = levenshteinSimilarity(
-            leftTokens.joined(),
-            rightTokens.joined()
-        )
+        let compactEditScore = leftTokens.count == 1 && rightTokens.count == 1
+            ? spacedEditScore
+            : levenshteinSimilarity(leftTokens.joined(), rightTokens.joined())
         let editScore = max(spacedEditScore, compactEditScore)
 
         // Edit distance is discounted so token agreement wins when words merely share a prefix.
@@ -275,8 +286,8 @@ struct LyricsCandidateMatcher: Sendable {
         guard !left.isEmpty, !right.isEmpty else { return left == right ? 1 : 0 }
 
         var previous = Array(0...right.count)
+        var current = Array(repeating: 0, count: right.count + 1)
         for (leftIndex, leftCharacter) in left.enumerated() {
-            var current = Array(repeating: 0, count: right.count + 1)
             current[0] = leftIndex + 1
             for (rightIndex, rightCharacter) in right.enumerated() {
                 let substitutionCost = leftCharacter == rightCharacter ? 0 : 1
@@ -286,7 +297,7 @@ struct LyricsCandidateMatcher: Sendable {
                     previous[rightIndex] + substitutionCost
                 )
             }
-            previous = current
+            swap(&previous, &current)
         }
 
         let longestLength = max(left.count, right.count)

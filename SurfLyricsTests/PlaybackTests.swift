@@ -348,6 +348,67 @@ final class PlaybackTests: XCTestCase {
         XCTAssertEqual(state.statusText, "")
     }
 
+    func testPlayingRefreshCannotOverwriteNewerPlayerNotification() async {
+        let manager = ControlledMusicManager()
+        let state = AppState(musicManager: manager)
+        defer { state.shutdown() }
+        _ = await eventually { manager.playbackCallCount == 1 }
+
+        state.requestPlaybackRefresh(preferredPlayer: .spotify)
+        state.requestPlaybackRefresh(preferredPlayer: .appleMusic)
+        manager.resolveNextPlayback(with: .init(
+            track: makeTrack(source: .spotify, isPlaying: true), issue: nil
+        ))
+        let trailingStarted = await eventually { manager.playbackCallCount == 2 }
+        XCTAssertTrue(trailingStarted)
+        XCTAssertEqual(manager.preferredPlayers, [nil, .appleMusic])
+        manager.resolveNextPlayback(with: .init(
+            track: makeTrack(source: .appleMusic, isPlaying: true), issue: nil
+        ))
+        _ = await eventually { state.sourceText == "재생 앱: Apple Music" }
+        XCTAssertEqual(state.sourceText, "재생 앱: Apple Music")
+    }
+
+    func testPausedTrackChangeAndSourceReloadResetLyricsWithoutResumingPlayback() async {
+        let manager = ControlledMusicManager()
+        let state = AppState(musicManager: manager)
+        defer { state.shutdown() }
+        _ = await eventually { manager.playbackCallCount == 1 }
+        manager.resolveNextPlayback(with: .init(
+            track: makeTrack(source: .spotify, isPlaying: true, name: "First"), issue: nil
+        ))
+        _ = await eventually { manager.lyricsCallCount == 1 }
+        manager.resolveLyrics(forTrackNamed: "First", with: (
+            Lyrics(lines: [LyricsLine(timeMs: 0, text: "First line")]), "First source"
+        ))
+        _ = await eventually { state.statusText == "First line" }
+
+        state.requestPlaybackRefresh(preferredPlayer: .spotify)
+        _ = await eventually { manager.playbackCallCount == 2 }
+        manager.resolveNextPlayback(with: .init(
+            track: makeTrack(source: .spotify, isPlaying: false, name: "Second"), issue: nil
+        ))
+        _ = await eventually { manager.lyricsCallCount == 1 }
+        XCTAssertEqual(state.statusText, "♫ Second — Artist")
+        XCTAssertEqual(state.sourceText, "재생 앱: Spotify")
+        manager.resolveLyrics(forTrackNamed: "Second", with: (
+            Lyrics(lines: [LyricsLine(timeMs: 0, text: "Second line")]), "Second source"
+        ))
+        _ = await eventually { state.statusText == "Second line" }
+
+        NotificationCenter.default.post(name: .settingsLyricsSourcesChanged, object: nil)
+        _ = await eventually { manager.lyricsCallCount == 1 }
+        XCTAssertEqual(state.statusText, "♫ Second — Artist")
+        XCTAssertEqual(state.sourceText, "재생 앱: Spotify")
+        manager.resolveLyrics(forTrackNamed: "Second", with: (
+            Lyrics(lines: [LyricsLine(timeMs: 0, text: "Reloaded line")]), "Reloaded source"
+        ))
+        _ = await eventually { state.statusText == "Reloaded line" }
+        XCTAssertEqual(state.statusText, "Reloaded line")
+        XCTAssertEqual(state.scheduledRefreshInterval, 3)
+        XCTAssertEqual(manager.playbackCallCount, 2)
+    }
+
     func testStaleLyricsCompletionCannotOverwriteNewTrack() async {
         let manager = ControlledMusicManager()
         let state = AppState(musicManager: manager)

@@ -8,6 +8,49 @@ final class AppState: ObservableObject {
         let progressMs: Int
     }
 
+    private enum LyricsLoadState {
+        case idle
+        case loading(LyricsQueryIdentity)
+        case finished(LyricsQueryIdentity?, Lyrics?)
+
+        var lyrics: Lyrics? {
+            if case let .finished(_, lyrics) = self { return lyrics }
+            return nil
+        }
+
+        var queryIdentity: LyricsQueryIdentity? {
+            switch self {
+            case .idle: nil
+            case let .loading(query), let .finished(query?, _): query
+            case .finished(nil, _): nil
+            }
+        }
+
+        var isLoading: Bool {
+            if case .loading = self { return true }
+            return false
+        }
+
+        var hasFinished: Bool {
+            if case .finished = self { return true }
+            return false
+        }
+    }
+
+    private enum RefreshPolicy {
+        static let initial: TimeInterval = 1
+        static let inactive: TimeInterval = 3
+        static let missingLyrics: TimeInterval = 5
+
+        static func interval(nextLineTimeMs: Int?, progressMs: Int, durationMs: Int) -> TimeInterval {
+            if let next = nextLineTimeMs {
+                return max(0.3, min(Double(next - progressMs) / 1000.0, 10.0))
+            }
+            let remaining = Double(durationMs - progressMs) / 1000.0
+            return remaining > 1.0 ? min(remaining, 10.0) : initial
+        }
+    }
+
     @Published private(set) var statusText = ""
     @Published private(set) var sourceText: String?
     @Published private(set) var needsAutomationPermission = false
@@ -24,14 +67,12 @@ final class AppState: ObservableObject {
     private var lyricsTask: Task<Void, Never>?
     private var distributedObservers: [NSObjectProtocol] = []
     private var localObservers: [NSObjectProtocol] = []
-    private var updateInterval: TimeInterval = 1.0
+    private var updateInterval = RefreshPolicy.initial
     private var currentTrackId: TrackIdentity?
-    private var currentLyrics: Lyrics?
-    private var isLoadingLyrics = false
-    private var hasFinishedLyricsLookup = false
-    private var lyricsQueryIdentity: LyricsQueryIdentity?
+    private var lyricsState: LyricsLoadState = .idle
     private var currentTrack: MusicTrack?
     private var preferredPlayer: MusicPlayer?
+    private var pendingPreferredPlayer: MusicPlayer?
     private var isRefreshInFlight = false
     private var needsTrailingRefresh = false
     private var isShuttingDown = false
@@ -147,8 +188,8 @@ final class AppState: ObservableObject {
         guard currentTrackId == display.trackID,
             let track = currentTrack,
             track.isPlaying,
-            !isLoadingLyrics,
-            let lyrics = currentLyrics
+            !lyricsState.isLoading,
+            let lyrics = lyricsState.lyrics
         else {
             return
         }
@@ -173,7 +214,7 @@ final class AppState: ObservableObject {
         guard !isShuttingDown else { return }
         if let preferredPlayer {
             cancelScheduledUpdate()
-            self.preferredPlayer = preferredPlayer
+            pendingPreferredPlayer = preferredPlayer
         }
 
         guard !isRefreshInFlight else {
@@ -183,7 +224,8 @@ final class AppState: ObservableObject {
 
         isRefreshInFlight = true
         let musicManager = musicManager
-        let requestedPlayer = self.preferredPlayer
+        let requestedPlayer = pendingPreferredPlayer ?? self.preferredPlayer
+        pendingPreferredPlayer = nil
         refreshTask = Task { [weak self] in
             let result = await musicManager.getCurrentTrack(preferredPlayer: requestedPlayer)
             guard let self else { return }
@@ -220,45 +262,33 @@ final class AppState: ObservableObject {
     private func handleUnavailablePlayback(_ issue: MusicPlaybackIssue?) {
         let requiresPermission = issue?.requiresAutomationPermission == true
         setNeedsAutomationPermission(requiresPermission)
-        updateInterval = 3.0
+        updateInterval = RefreshPolicy.inactive
         setStatusText(requiresPermission ? "⚠ 음악 앱 접근 권한 필요" : idleStatusText)
 
-        lyricsTask?.cancel()
-        currentTrackId = nil
-        currentLyrics = nil
+        resetLyrics(for: nil)
         currentTrack = nil
-        setSourceText(nil)
-        isLoadingLyrics = false
-        hasFinishedLyricsLookup = false
-        lyricsQueryIdentity = nil
         scheduleNextUpdate()
     }
 
     private func handlePlaying(_ track: MusicTrack) {
         let id = track.identity
         if id != currentTrackId {
-            lyricsTask?.cancel()
-            currentTrackId = id
-            currentLyrics = nil
-            isLoadingLyrics = false
-            hasFinishedLyricsLookup = false
-            lyricsQueryIdentity = nil
-            setSourceText(textFormatter.sourceDescription(for: track, lyricsSource: nil))
-            updateInterval = 1.0
+            resetLyrics(for: track)
+            updateInterval = RefreshPolicy.initial
             if track.itemKind.supportsLyricsLookup {
                 loadLyrics(for: track)
             } else {
-                hasFinishedLyricsLookup = true
+                lyricsState = .finished(nil, nil)
                 updateDisplay(for: track, force: false)
             }
         } else {
             if track.itemKind.supportsLyricsLookup,
-                currentLyrics == nil,
-                (!hasFinishedLyricsLookup || lyricsQueryIdentity != track.lyricsQueryIdentity)
+                lyricsState.lyrics == nil,
+                (!lyricsState.hasFinished || lyricsState.queryIdentity != track.lyricsQueryIdentity)
             {
                 loadLyrics(for: track)
             }
-            if sourceText == nil || currentLyrics == nil {
+            if sourceText == nil || lyricsState.lyrics == nil {
                 setSourceText(textFormatter.sourceDescription(for: track, lyricsSource: nil))
             }
             updateDisplay(for: track, force: false)
@@ -269,16 +299,10 @@ final class AppState: ObservableObject {
     private func handlePaused(_ track: MusicTrack) {
         let id = track.identity
         if id != currentTrackId {
-            lyricsTask?.cancel()
-            currentTrackId = id
-            currentLyrics = nil
-            isLoadingLyrics = false
-            hasFinishedLyricsLookup = false
-            lyricsQueryIdentity = nil
-            setSourceText(textFormatter.sourceDescription(for: track, lyricsSource: nil))
+            resetLyrics(for: track)
         }
-        if track.itemKind.supportsLyricsLookup, currentLyrics == nil,
-            (!hasFinishedLyricsLookup || lyricsQueryIdentity != track.lyricsQueryIdentity)
+        if track.itemKind.supportsLyricsLookup, lyricsState.lyrics == nil,
+            (!lyricsState.hasFinished || lyricsState.queryIdentity != track.lyricsQueryIdentity)
         {
             loadLyrics(for: track)
         }
@@ -286,22 +310,24 @@ final class AppState: ObservableObject {
             setSourceText(textFormatter.sourceDescription(for: track, lyricsSource: nil))
         }
         updateDisplay(for: track, force: false)
-        updateInterval = 3.0
+        updateInterval = RefreshPolicy.inactive
         scheduleNextUpdate()
     }
 
-    private func reloadLyrics(for track: MusicTrack) {
+    private func resetLyrics(for track: MusicTrack?) {
         lyricsTask?.cancel()
-        currentLyrics = nil
-        setSourceText(textFormatter.sourceDescription(for: track, lyricsSource: nil))
-        isLoadingLyrics = false
-        hasFinishedLyricsLookup = false
-        lyricsQueryIdentity = nil
-        currentTrackId = track.identity
+        lyricsTask = nil
+        currentTrackId = track?.identity
+        lyricsState = .idle
+        setSourceText(track.map { textFormatter.sourceDescription(for: $0, lyricsSource: nil) })
+    }
+
+    private func reloadLyrics(for track: MusicTrack) {
+        resetLyrics(for: track)
         if track.itemKind.supportsLyricsLookup {
             loadLyrics(for: track)
         } else {
-            hasFinishedLyricsLookup = true
+            lyricsState = .finished(nil, nil)
             updateDisplay(for: track, force: false)
         }
         scheduleNextUpdate(displaying: track.isPlaying ? track : nil)
@@ -309,13 +335,11 @@ final class AppState: ObservableObject {
 
     private func loadLyrics(for track: MusicTrack) {
         let requestedQueryIdentity = track.lyricsQueryIdentity
-        if isLoadingLyrics, lyricsQueryIdentity == requestedQueryIdentity {
+        if lyricsState.isLoading, lyricsState.queryIdentity == requestedQueryIdentity {
             return
         }
         lyricsTask?.cancel()
-        isLoadingLyrics = true
-        hasFinishedLyricsLookup = false
-        lyricsQueryIdentity = requestedQueryIdentity
+        lyricsState = .loading(requestedQueryIdentity)
         setStatusText(textFormatter.text(for: track, lyricsLine: nil, isLoadingLyrics: true))
         let requestedTrackId = track.identity
 
@@ -324,20 +348,18 @@ final class AppState: ObservableObject {
             let (lyrics, source) = await musicManager.getLyrics(for: track)
             guard !Task.isCancelled,
                 requestedTrackId == currentTrackId,
-                requestedQueryIdentity == lyricsQueryIdentity
+                requestedQueryIdentity == lyricsState.queryIdentity
             else {
                 return
             }
 
-            isLoadingLyrics = false
-            hasFinishedLyricsLookup = true
-            currentLyrics = lyrics
+            lyricsState = .finished(requestedQueryIdentity, lyrics)
             setSourceText(textFormatter.sourceDescription(for: track, lyricsSource: source))
             if let currentTrack {
                 updateDisplay(for: currentTrack, force: false)
             }
             if lyrics == nil {
-                updateInterval = 5.0
+                updateInterval = RefreshPolicy.missingLyrics
                 scheduleNextUpdate()
             } else if let currentTrack, timer != nil, currentTrack.isPlaying {
                 scheduleNextUpdate(displaying: currentTrack, onlyIfEarlier: true)
@@ -352,9 +374,9 @@ final class AppState: ObservableObject {
     }
 
     private func displayText(for track: MusicTrack) -> String {
-        let lookup = currentLyrics?.lookup(at: track.progressMs)
-        if let lookup, lookup.currentText != nil {
-            adjustInterval(
+        let lookup = lyricsState.lyrics?.lookup(at: track.progressMs)
+        if track.isPlaying, let lookup, lookup.currentText != nil {
+            updateInterval = RefreshPolicy.interval(
                 nextLineTimeMs: lookup.nextLineTimeMs,
                 progressMs: track.progressMs,
                 durationMs: track.durationMs
@@ -363,17 +385,8 @@ final class AppState: ObservableObject {
         return textFormatter.text(
             for: track,
             lyricsLine: lookup?.currentText,
-            isLoadingLyrics: isLoadingLyrics
+            isLoadingLyrics: lyricsState.isLoading
         )
-    }
-
-    private func adjustInterval(nextLineTimeMs: Int?, progressMs: Int, durationMs: Int) {
-        if let next = nextLineTimeMs {
-            updateInterval = max(0.3, min(Double(next - progressMs) / 1000.0, 10.0))
-        } else {
-            let remaining = Double(durationMs - progressMs) / 1000.0
-            updateInterval = remaining > 1.0 ? min(remaining, 10.0) : 1.0
-        }
     }
 
     private func setStatusText(_ text: String) {

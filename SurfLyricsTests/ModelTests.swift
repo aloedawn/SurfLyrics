@@ -2,6 +2,23 @@ import XCTest
 @testable import SurfLyrics
 
 final class ModelTests: XCTestCase {
+    func testLRCParserRejectsOverflowingAndUnrepresentableTimestamps() {
+        let invalid = [
+            "[9223372036854775807:00.00]Overflow",
+            "[999999999999999999999999999:00.00]Invalid minutes",
+            "[00:999999999999999999999999999]Invalid seconds",
+            "[153722867280913:00]Overflow in milliseconds",
+            "[153722867280912:55.808]Overflow in fraction",
+        ]
+        for line in invalid {
+            XCTAssertTrue(LRCParser.parse(line).isEmpty, line)
+        }
+        XCTAssertEqual(
+            LRCParser.parse("[153722867280912:55.807]Boundary\n[00:01.00]Valid"),
+            [LyricsLine(timeMs: 1000, text: "Valid"), LyricsLine(timeMs: Int.max, text: "Boundary")]
+        )
+    }
+
     func testLRCParserSupportsCommonTimestampFormatsAndSortsLines() {
         let lines = LRCParser.parse(
             """

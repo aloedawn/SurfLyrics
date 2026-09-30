@@ -25,6 +25,8 @@ Edit `SurfLyrics/AppIcon.icon` and `SpotifyConnectionHelper/HelperIcon.icon` in 
 
 A freshly launched Spotify page can appear before its authenticated lyrics client is ready. Transient bridge failures have a bounded warmup retry; confirmed missing or unsynced lyrics immediately fall through to the next provider.
 
+`SharedRequest` coalesces concurrent Musixmatch token refreshes and Spotify metadata lookups. Cancelling one caller leaves shared work running; cancelling the last caller cancels transport. Metadata results retain each caller's playback position and playing state, and late token rejections cannot invalidate a newer token.
+
 ## Checks
 
 ```sh
@@ -54,3 +56,11 @@ The shared `SurfLyrics` scheme remains the TestFlight target. App Store Connect 
 Spotify 1.3.0.277 renamed the chunk runtime to `rspackChunk` and changed the request-builder and lyrics-host module IDs to `48331` and `62192`. The old bridge returned `unsupported` while the local connection remained ready. The bridge now supports that adapter alongside the existing 1.2.99.317 adapter, validates the lyrics host, and continues to fail closed for unknown modules.
 
 All 105 Swift tests and 7 bridge tests passed, and the signed Release build succeeded. Evaluating the updated bridge in the running Spotify 1.3.0.277 client returned 28 ordered `LINE_SYNCED` lines for the same “Faded Words” track used above. This verifies live retrieval; display validation of the distributed TestFlight build remains pending.
+
+## Internal refactoring — 2026-10-01
+
+Lyrics-loading transitions now use one explicit state and a shared reset path. Pending player notifications survive an older playback refresh, paused lyric reloads keep the three-second refresh interval, and invalid or overflowing LRC timestamps are rejected. Matching retains its scores and ambiguity rules while skipping redundant comparisons, checking rejection gates earlier, and reusing edit-distance buffers. Settings, menu layout, provider priority and instrumental-gap rendering are unchanged.
+
+All 118 Swift tests and 7 bridge tests passed; shell syntax checks and a locally signed Release build also passed. A deterministic comparison against commit `9a776b8` produced identical results for 20,000 individual matches and 1,000 candidate batches. Three optimized-build runs of a synthetic 200-candidate workload took about 0.124 seconds each, compared with 0.264–0.274 seconds for the baseline. These timings measure matching work, not whole-app CPU or energy usage.
+
+The local Release app reused the running Spotify connection. Its settings showed the Spotify client source and the instrumental icon, including after a lyric reload while Spotify was paused. This verifies the local build's display and reload path; the distributed TestFlight build and a fresh helper reconnection were not exercised in this run.

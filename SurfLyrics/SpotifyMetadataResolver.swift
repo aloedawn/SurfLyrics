@@ -53,6 +53,7 @@ final class SpotifyMetadataResolver {
         category: "SpotifyMetadata"
     )
     private var cache: [String: CacheEntry] = [:]
+    private var inFlight: [String: SharedRequest<MusicTrack>] = [:]
     private var accessCounter: UInt64 = 0
 
     init(urlSession: URLSession, cacheCapacity: Int = 64) {
@@ -61,7 +62,7 @@ final class SpotifyMetadataResolver {
     }
 
     func resolve(_ track: MusicTrack) async -> MusicTrack? {
-        guard track.source == .spotify,
+        guard !Task.isCancelled, track.source == .spotify,
             track.itemKind == .track,
             let trackID = track.sourceTrackID,
             let url = URL(string: "https://open.spotify.com/embed/track/\(trackID)")
@@ -78,6 +79,19 @@ final class SpotifyMetadataResolver {
             cache[trackID] = nil
         }
 
+        let request = inFlight[trackID] ?? SharedRequest<MusicTrack>()
+        inFlight[trackID] = request
+        let resolved = await request.value {
+            await self.fetchMetadata(for: track, trackID: trackID, url: url)
+        }
+        if !request.isRunning, inFlight[trackID] === request {
+            inFlight[trackID] = nil
+        }
+        guard let resolved, !Task.isCancelled else { return nil }
+        return Self.replacingPlaybackState(in: resolved, with: track)
+    }
+
+    private func fetchMetadata(for track: MusicTrack, trackID: String, url: URL) async -> MusicTrack? {
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
         request.cachePolicy = .useProtocolCachePolicy
