@@ -593,6 +593,30 @@ final class LyricsServiceTests: XCTestCase {
         XCTAssertEqual(MockURLProtocol.state.requestCount, 1)
     }
 
+    func testSpotifyEmbedResolverEvictsLeastRecentlyUsedMetadata() async {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let resolver = SpotifyMetadataResolver(
+            urlSession: URLSession(configuration: configuration),
+            cacheCapacity: 2
+        )
+        MockURLProtocol.state.setHandler { request in
+            let trackID = request.url!.lastPathComponent
+            let response = Self.spotifyEmbedResponse.replacingOccurrences(
+                of: "StableTrack123", with: trackID
+            )
+            return (200, Data(response.utf8))
+        }
+
+        _ = await resolver.resolve(makeTrack(sourceTrackID: "FirstTrack123"))
+        _ = await resolver.resolve(makeTrack(sourceTrackID: "SecondTrack123"))
+        _ = await resolver.resolve(makeTrack(sourceTrackID: "FirstTrack123"))
+        _ = await resolver.resolve(makeTrack(sourceTrackID: "ThirdTrack123"))
+        _ = await resolver.resolve(makeTrack(sourceTrackID: "SecondTrack123"))
+
+        XCTAssertEqual(MockURLProtocol.state.requestCount, 4)
+    }
+
     func testMusixmatchRunsAfterAllLRCLIBLookupsMiss() async {
         let defaults = makeDefaults()
         defaults.set(true, forKey: AppPreferenceKey.lyricsSourceLRCLIB)
@@ -852,6 +876,30 @@ final class LyricsServiceTests: XCTestCase {
             return (200, Data(Self.musixmatchResponse.utf8))
         }
         let result = await service.getLyrics(for: makeTrack())
+        XCTAssertEqual(result.0?.lines.first?.text, "Hello")
+        XCTAssertEqual(preferences.musixmatchToken, "fresh-token")
+        XCTAssertEqual(MockURLProtocol.state.requestCount, 3)
+    }
+
+    func testMusixmatchRefreshesNestedRejectedTokenInsideHTTP200() async {
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: AppPreferenceKey.lyricsSourceLRCLIB)
+        let preferences = AppPreferences(defaults: defaults)
+        preferences.storeMusixmatchToken("rejected-token", expiresAt: Date().addingTimeInterval(600))
+        let service = makeService(defaults: defaults)
+        MockURLProtocol.state.setHandler { request in
+            if request.url?.lastPathComponent == "token.get" {
+                return (200, Data(#"{"message":{"body":{"user_token":"fresh-token"}}}"#.utf8))
+            }
+            let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+            if items?.first(where: { $0.name == "usertoken" })?.value == "rejected-token" {
+                return (200, Data(#"{"message":{"body":{"macro_calls":{"matcher.track.get":{"message":{"header":{"status_code":401},"body":[]}}}}}}"#.utf8))
+            }
+            return (200, Data(Self.musixmatchResponse.utf8))
+        }
+
+        let result = await service.getLyrics(for: makeTrack())
+
         XCTAssertEqual(result.0?.lines.first?.text, "Hello")
         XCTAssertEqual(preferences.musixmatchToken, "fresh-token")
         XCTAssertEqual(MockURLProtocol.state.requestCount, 3)

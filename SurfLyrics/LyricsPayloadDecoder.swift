@@ -57,24 +57,31 @@ actor LyricsPayloadDecoder {
     }
 
     func decodeMusixmatch(_ data: Data, expectedTrack: MusicTrack) -> LyricsFetchResult {
+        evaluateMusixmatch(data, expectedTrack: expectedTrack).result
+    }
+
+    func evaluateMusixmatch(
+        _ data: Data,
+        expectedTrack: MusicTrack
+    ) -> (requiresTokenRefresh: Bool, result: LyricsFetchResult) {
         let interval = signposter.beginInterval("MusixmatchDecode")
         defer { signposter.endInterval("MusixmatchDecode", interval) }
 
-        // Musixmatch reports API errors inside HTTP 200 responses, sometimes with body: [].
-        for call in [nil, "matcher.track.get", "track.subtitles.get"] as [String?] {
-            if let status = musixmatchStatusCode(data, call: call), status != 200 {
-                return status == 404 ? .notFound : .transientFailure
-            }
-        }
-
-        guard let payload = try? JSONDecoder().decode(MusixmatchPayload.self, from: data),
-            let calls = payload.message?.body?.macroCalls
+        guard let payload = try? JSONDecoder().decode(MusixmatchPayload.self, from: data)
         else {
-            return .transientFailure
+            return (false, .transientFailure)
+        }
+        let requiresTokenRefresh = payload.statusCodes.contains(401)
+        // Musixmatch reports API errors inside HTTP 200 responses, sometimes with body: [].
+        if let status = payload.statusCodes.first(where: { $0 != 200 }) {
+            return (requiresTokenRefresh, status == 404 ? .notFound : .transientFailure)
+        }
+        guard let calls = payload.message?.body?.macroCalls else {
+            return (requiresTokenRefresh, .transientFailure)
         }
 
         guard let matchedTrack = calls.matcherTrack?.message?.body?.track else {
-            return .notFound
+            return (requiresTokenRefresh, .notFound)
         }
         let candidate = LyricsCandidate(
             trackName: matchedTrack.name ?? "",
@@ -87,47 +94,32 @@ actor LyricsPayloadDecoder {
             let matchedID = matchedTrack.spotifyID, !matchedID.isEmpty
         {
             // A provider-confirmed Spotify ID remains stable across translated metadata.
-            guard matchedID == expectedID else { return .notFound }
+            guard matchedID == expectedID else { return (requiresTokenRefresh, .notFound) }
         } else {
             guard matcher.isLikelyMatch(candidate, for: expectedTrack) else {
-                return .notFound
+                return (requiresTokenRefresh, .notFound)
             }
         }
 
         guard let lrc = calls.subtitles?.message?.body?.subtitleList?.first?.subtitle?.body,
             !lrc.isEmpty
         else {
-            return .notFound
+            return (requiresTokenRefresh, .notFound)
         }
-        return lyricsResult(from: lrc)
+        return (requiresTokenRefresh, lyricsResult(from: lrc))
     }
 
     func decodeMusixmatchToken(_ data: Data) -> String? {
-        if let status = musixmatchStatusCode(data), status != 200 { return nil }
-        let token = try? JSONDecoder().decode(MusixmatchTokenPayload.self, from: data)
-            .message?.body?.userToken
+        guard let payload = try? JSONDecoder().decode(MusixmatchPayload.self, from: data)
+        else { return nil }
+        if let status = payload.message?.header?.statusCode, status != 200 { return nil }
+        let token = payload.message?.body?.userToken
         return token?.isEmpty == false ? token : nil
     }
 
     func musixmatchRequiresTokenRefresh(_ data: Data) -> Bool {
-        ([nil, "matcher.track.get", "track.subtitles.get"] as [String?]).contains {
-            musixmatchStatusCode(data, call: $0) == 401
-        }
-    }
-
-    private func musixmatchStatusCode(_ data: Data, call: String? = nil) -> Int? {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            var message = root["message"] as? [String: Any]
-        else { return nil }
-        if let call {
-            guard let body = message["body"] as? [String: Any],
-                let calls = body["macro_calls"] as? [String: Any],
-                let result = calls[call] as? [String: Any],
-                let nestedMessage = result["message"] as? [String: Any]
-            else { return nil }
-            message = nestedMessage
-        }
-        return (message["header"] as? [String: Any])?["status_code"] as? Int
+        (try? JSONDecoder().decode(MusixmatchPayload.self, from: data))?
+            .statusCodes.contains(401) == true
     }
 
     private func lyricsResult(from lrc: String) -> LyricsFetchResult {
@@ -155,34 +147,30 @@ private struct LRCLIBPayload: Decodable {
     let syncedLyrics: String?
 }
 
-private struct MusixmatchTokenPayload: Decodable {
-    let message: Message?
-
-    struct Message: Decodable {
-        let body: Body?
-    }
-
-    struct Body: Decodable {
-        let userToken: String?
-
-        enum CodingKeys: String, CodingKey {
-            case userToken = "user_token"
-        }
-    }
-}
-
 private struct MusixmatchPayload: Decodable {
-    let message: Message?
+    let message: MusixmatchMessage<Body>?
 
-    struct Message: Decodable {
-        let body: Body?
+    var statusCodes: [Int] {
+        [
+            message?.header?.statusCode,
+            message?.body?.macroCalls?.matcherTrack?.message?.header?.statusCode,
+            message?.body?.macroCalls?.subtitles?.message?.header?.statusCode,
+        ].compactMap { $0 }
     }
 
     struct Body: Decodable {
         let macroCalls: MacroCalls?
+        let userToken: String?
 
         enum CodingKeys: String, CodingKey {
             case macroCalls = "macro_calls"
+            case userToken = "user_token"
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            macroCalls = try? container.decode(MacroCalls.self, forKey: .macroCalls)
+            userToken = try? container.decode(String.self, forKey: .userToken)
         }
     }
 
@@ -194,14 +182,16 @@ private struct MusixmatchPayload: Decodable {
             case matcherTrack = "matcher.track.get"
             case subtitles = "track.subtitles.get"
         }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            matcherTrack = try? container.decode(MatcherCall.self, forKey: .matcherTrack)
+            subtitles = try? container.decode(SubtitleCall.self, forKey: .subtitles)
+        }
     }
 
     struct MatcherCall: Decodable {
-        let message: MatcherMessage?
-    }
-
-    struct MatcherMessage: Decodable {
-        let body: MatcherBody?
+        let message: MusixmatchMessage<MatcherBody>?
     }
 
     struct MatcherBody: Decodable {
@@ -225,11 +215,7 @@ private struct MusixmatchPayload: Decodable {
     }
 
     struct SubtitleCall: Decodable {
-        let message: SubtitleMessage?
-    }
-
-    struct SubtitleMessage: Decodable {
-        let body: SubtitleBody?
+        let message: MusixmatchMessage<SubtitleBody>?
     }
 
     struct SubtitleBody: Decodable {
@@ -250,6 +236,29 @@ private struct MusixmatchPayload: Decodable {
         enum CodingKeys: String, CodingKey {
             case body = "subtitle_body"
         }
+    }
+}
+
+private struct MusixmatchMessage<Body: Decodable>: Decodable {
+    let header: Header?
+    let body: Body?
+
+    struct Header: Decodable {
+        let statusCode: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case statusCode = "status_code"
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case header, body
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        header = try? container.decode(Header.self, forKey: .header)
+        body = try? container.decode(Body.self, forKey: .body)
     }
 }
 

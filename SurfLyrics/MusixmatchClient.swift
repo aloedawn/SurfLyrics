@@ -71,8 +71,8 @@ final class MusixmatchClient {
             guard let httpResponse = response as? HTTPURLResponse else {
                 return .transientFailure
             }
-            let needsTokenRefresh = await decoder.musixmatchRequiresTokenRefresh(data)
-            if httpResponse.statusCode == 401 || needsTokenRefresh {
+            let evaluation = await decoder.evaluateMusixmatch(data, expectedTrack: track)
+            if httpResponse.statusCode == 401 || evaluation.requiresTokenRefresh {
                 preferences.clearMusixmatchToken()
                 guard canRefreshToken, !Task.isCancelled,
                     let refreshedToken = await validToken()
@@ -88,7 +88,7 @@ final class MusixmatchClient {
                 logger.error("Musixmatch returned a non-success status")
                 return .transientFailure
             }
-            return await decoder.decodeMusixmatch(data, expectedTrack: track)
+            return evaluation.result
         } catch {
             if !Task.isCancelled {
                 logger.error("Musixmatch request failed")

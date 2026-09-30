@@ -31,6 +31,26 @@ struct LyricsCandidateMatcher: Sendable {
     private static let minimumSingleTokenTitleSimilarity = 0.90
     private static let featureMarkers: Set<String> = ["feat", "ft", "featuring"]
 
+    private struct PreparedTrack {
+        let editionTags: Set<EditionTag>
+        let titleTokens: [String]
+        let remasterTitleTokens: [String]
+        let artistTokens: [String]
+        let albumTokens: [String]
+        let hasAlbum: Bool
+        let durationMs: Int
+
+        init(_ track: MusicTrack) {
+            editionTags = LyricsCandidateMatcher.editionTags(in: track.name)
+            titleTokens = LyricsCandidateMatcher.normalizedTokens(track.name)
+            remasterTitleTokens = LyricsCandidateMatcher.remasterNormalizedTokens(titleTokens)
+            artistTokens = LyricsCandidateMatcher.normalizedTokens(track.artist)
+            albumTokens = LyricsCandidateMatcher.normalizedTokens(track.album)
+            hasAlbum = !track.album.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            durationMs = track.durationMs
+        }
+    }
+
     private let likelyMatchThreshold: Double
     private let ambiguityMargin: Double
 
@@ -43,7 +63,7 @@ struct LyricsCandidateMatcher: Sendable {
     }
 
     func isLikelyMatch(_ candidate: LyricsCandidate, for track: MusicTrack) -> Bool {
-        guard let score = score(candidate, for: track) else { return false }
+        guard let score = score(candidate, for: PreparedTrack(track)) else { return false }
         return score >= likelyMatchThreshold
     }
 
@@ -51,22 +71,26 @@ struct LyricsCandidateMatcher: Sendable {
         for track: MusicTrack,
         among candidates: [LyricsCandidate]
     ) -> Int? {
+        let preparedTrack = PreparedTrack(track)
         let ranked = candidates.enumerated()
             .compactMap { index, candidate -> (index: Int, score: Double)? in
-                guard let score = score(candidate, for: track) else { return nil }
+                guard let score = score(candidate, for: preparedTrack) else { return nil }
                 return (index, score)
             }
-            .sorted { lhs, rhs in
-                if lhs.score == rhs.score { return lhs.index < rhs.index }
-                return lhs.score > rhs.score
-            }
 
-        guard let best = ranked.first, best.score >= likelyMatchThreshold else {
+        guard let first = ranked.first else { return nil }
+        let best = ranked.dropFirst().reduce(first) { best, candidate in
+            candidate.score > best.score ? candidate : best
+        }
+        guard best.score >= likelyMatchThreshold
+        else {
             return nil
         }
-        if let runnerUp = ranked.dropFirst().first(where: {
-            !Self.equivalentMetadata(candidates[$0.index], candidates[best.index])
-        }), best.score - runnerUp.score < ambiguityMargin {
+        if ranked.contains(where: {
+            $0.index != best.index
+                && best.score - $0.score < ambiguityMargin
+                && !Self.equivalentMetadata(candidates[$0.index], candidates[best.index])
+        }) {
             return nil
         }
         return best.index
@@ -80,18 +104,24 @@ struct LyricsCandidateMatcher: Sendable {
         return candidates[index]
     }
 
-    private func score(_ candidate: LyricsCandidate, for track: MusicTrack) -> Double? {
-        guard Self.editionTags(in: track.name) == Self.editionTags(in: candidate.trackName) else {
+    private func score(_ candidate: LyricsCandidate, for track: PreparedTrack) -> Double? {
+        guard track.editionTags == Self.editionTags(in: candidate.trackName) else {
             return nil
         }
 
-        let titleSimilarity = Self.titleSimilarity(track.name, candidate.trackName)
-        let artistSimilarity = Self.textSimilarity(track.artist, candidate.artistName)
+        let candidateTitleTokens = Self.normalizedTokens(candidate.trackName)
+        let candidateRemasterTokens = Self.remasterNormalizedTokens(candidateTitleTokens)
+        let titleSimilarity = max(
+            Self.similarity(track.titleTokens, candidateTitleTokens),
+            Self.similarity(track.remasterTitleTokens, candidateRemasterTokens)
+        )
+        let artistSimilarity = Self.similarity(
+            track.artistTokens,
+            Self.normalizedTokens(candidate.artistName)
+        )
         guard titleSimilarity >= Self.minimumTitleSimilarity else { return nil }
-        let trackTitleTokens = Self.remasterNormalizedTokens(track.name)
-        let candidateTitleTokens = Self.remasterNormalizedTokens(candidate.trackName)
-        if min(trackTitleTokens.count, candidateTitleTokens.count) == 1,
-            trackTitleTokens != candidateTitleTokens,
+        if min(track.remasterTitleTokens.count, candidateRemasterTokens.count) == 1,
+            track.remasterTitleTokens != candidateRemasterTokens,
             titleSimilarity < Self.minimumSingleTokenTitleSimilarity
         {
             return nil
@@ -100,9 +130,12 @@ struct LyricsCandidateMatcher: Sendable {
         let albumSimilarity: Double?
         if let candidateAlbum = candidate.albumName,
             !candidateAlbum.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            !track.album.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            track.hasAlbum
         {
-            albumSimilarity = Self.textSimilarity(track.album, candidateAlbum)
+            albumSimilarity = Self.similarity(
+                track.albumTokens,
+                Self.normalizedTokens(candidateAlbum)
+            )
         } else {
             albumSimilarity = nil
         }
@@ -168,9 +201,11 @@ struct LyricsCandidateMatcher: Sendable {
     }
 
     private static func titleSimilarity(_ lhs: String, _ rhs: String) -> Double {
-        max(
-            textSimilarity(lhs, rhs),
-            similarity(remasterNormalizedTokens(lhs), remasterNormalizedTokens(rhs))
+        let leftTokens = normalizedTokens(lhs)
+        let rightTokens = normalizedTokens(rhs)
+        return max(
+            similarity(leftTokens, rightTokens),
+            similarity(remasterNormalizedTokens(leftTokens), remasterNormalizedTokens(rightTokens))
         )
     }
 
@@ -192,8 +227,7 @@ struct LyricsCandidateMatcher: Sendable {
         return max(tokenScore, editScore * 0.85)
     }
 
-    private static func remasterNormalizedTokens(_ text: String) -> [String] {
-        let tokens = normalizedTokens(text)
+    private static func remasterNormalizedTokens(_ tokens: [String]) -> [String] {
         guard tokens.contains(where: { ["remaster", "remastered"].contains($0) }) else {
             return tokens
         }

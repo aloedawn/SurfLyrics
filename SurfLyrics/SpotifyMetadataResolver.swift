@@ -6,6 +6,7 @@ final class SpotifyMetadataResolver {
     private struct CacheEntry {
         let track: MusicTrack
         let expiresAt: Date
+        var lastAccess: UInt64
     }
 
     private struct EmbedPayload: Decodable {
@@ -46,14 +47,17 @@ final class SpotifyMetadataResolver {
     }
 
     private let urlSession: URLSession
+    private let cacheCapacity: Int
     private let logger = Logger(
         subsystem: "com.aloedawn.surflyrics",
         category: "SpotifyMetadata"
     )
     private var cache: [String: CacheEntry] = [:]
+    private var accessCounter: UInt64 = 0
 
-    init(urlSession: URLSession) {
+    init(urlSession: URLSession, cacheCapacity: Int = 64) {
         self.urlSession = urlSession
+        self.cacheCapacity = max(1, cacheCapacity)
     }
 
     func resolve(_ track: MusicTrack) async -> MusicTrack? {
@@ -64,8 +68,14 @@ final class SpotifyMetadataResolver {
         else {
             return nil
         }
-        if let cached = cache[trackID], cached.expiresAt > Date() {
-            return Self.replacingPlaybackState(in: cached.track, with: track)
+        if var cached = cache[trackID] {
+            if cached.expiresAt > Date() {
+                accessCounter &+= 1
+                cached.lastAccess = accessCounter
+                cache[trackID] = cached
+                return Self.replacingPlaybackState(in: cached.track, with: track)
+            }
+            cache[trackID] = nil
         }
 
         var request = URLRequest(url: url)
@@ -76,32 +86,22 @@ final class SpotifyMetadataResolver {
             let (data, response) = try await urlSession.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse,
                 httpResponse.statusCode == 200,
-                let payloadData = Self.nextPayload(in: data),
-                let entity = try? JSONDecoder().decode(EmbedPayload.self, from: payloadData)
-                    .props.pageProps.state.data.entity,
-                entity.type == "track",
-                entity.id == trackID,
-                !entity.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                !entity.artists.isEmpty
+                !Task.isCancelled
             else {
                 return nil
             }
 
-            let resolvedTrack = MusicTrack(
-                source: track.source,
-                sourceTrackID: trackID,
-                itemKind: .track,
-                name: entity.name,
-                artist: entity.artists.map(\.name).joined(separator: ", "),
-                album: entity.album?.name ?? track.album,
-                durationMs: entity.duration > 0 ? entity.duration : track.durationMs,
-                progressMs: track.progressMs,
-                isPlaying: track.isPlaying
-            )
+            let resolvedTrack = await Task.detached(priority: .utility) {
+                Self.decodeTrack(from: data, expectedTrack: track, trackID: trackID)
+            }.value
+            guard let resolvedTrack, !Task.isCancelled else { return nil }
+            accessCounter &+= 1
             cache[trackID] = CacheEntry(
                 track: resolvedTrack,
-                expiresAt: Date().addingTimeInterval(24 * 60 * 60)
+                expiresAt: Date().addingTimeInterval(24 * 60 * 60),
+                lastAccess: accessCounter
             )
+            evictIfNeeded()
             return resolvedTrack
         } catch {
             if !Task.isCancelled {
@@ -109,6 +109,44 @@ final class SpotifyMetadataResolver {
             }
             return nil
         }
+    }
+
+    private func evictIfNeeded() {
+        guard cache.count > cacheCapacity else { return }
+        let now = Date()
+        cache = cache.filter { $0.value.expiresAt > now }
+        if cache.count > cacheCapacity,
+            let oldestKey = cache.min(by: { $0.value.lastAccess < $1.value.lastAccess })?.key
+        {
+            cache[oldestKey] = nil
+        }
+    }
+
+    private nonisolated static func decodeTrack(
+        from data: Data,
+        expectedTrack track: MusicTrack,
+        trackID: String
+    ) -> MusicTrack? {
+        guard let payloadData = nextPayload(in: data),
+            let entity = try? JSONDecoder().decode(EmbedPayload.self, from: payloadData)
+                .props.pageProps.state.data.entity,
+            entity.type == "track",
+            entity.id == trackID,
+            !entity.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            !entity.artists.isEmpty
+        else { return nil }
+
+        return MusicTrack(
+            source: track.source,
+            sourceTrackID: trackID,
+            itemKind: .track,
+            name: entity.name,
+            artist: entity.artists.map(\.name).joined(separator: ", "),
+            album: entity.album?.name ?? track.album,
+            durationMs: entity.duration > 0 ? entity.duration : track.durationMs,
+            progressMs: track.progressMs,
+            isPlaying: track.isPlaying
+        )
     }
 
     private nonisolated static func replacingPlaybackState(
