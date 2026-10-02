@@ -339,7 +339,7 @@
 				CODE_SIGN_ENTITLEMENTS = SurfLyrics/SurfLyrics.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 26080901;
+				CURRENT_PROJECT_VERSION = 26100201;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 2RDF6J3XVV;
 				ENABLE_APP_SANDBOX = YES;
@@ -347,7 +347,7 @@
 				INFOPLIST_FILE = SurfLyrics/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SurfLyrics;
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 1.1.3;
+				MARKETING_VERSION = 1.1.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aloedawn.surflyrics;
 				PRODUCT_NAME = SurfLyrics;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -489,7 +489,7 @@
 				CODE_SIGN_ENTITLEMENTS = SurfLyrics/SurfLyrics.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 26080901;
+				CURRENT_PROJECT_VERSION = 26100201;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 2RDF6J3XVV;
 				ENABLE_APP_SANDBOX = YES;
@@ -497,7 +497,7 @@
 				INFOPLIST_FILE = SurfLyrics/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SurfLyrics;
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 1.1.3;
+				MARKETING_VERSION = 1.1.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aloedawn.surflyrics;
 				PRODUCT_NAME = SurfLyrics;
 				SWIFT_EMIT_LOC_STRINGS = YES;
