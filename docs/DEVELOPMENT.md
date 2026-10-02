@@ -64,3 +64,11 @@ Lyrics-loading transitions now use one explicit state and a shared reset path. P
 All 118 Swift tests and 7 bridge tests passed; shell syntax checks and a locally signed Release build also passed. A deterministic comparison against commit `9a776b8` produced identical results for 20,000 individual matches and 1,000 candidate batches. Three optimized-build runs of a synthetic 200-candidate workload took about 0.124 seconds each, compared with 0.264–0.274 seconds for the baseline. These timings measure matching work, not whole-app CPU or energy usage.
 
 The local Release app reused the running Spotify connection. Its settings showed the Spotify client source and the instrumental icon, including after a lyric reload while Spotify was paused. This verifies the local build's display and reload path; the distributed TestFlight build and a fresh helper reconnection were not exercised in this run.
+
+## Spotify 1.3.3 compatibility — 2026-10-02
+
+Spotify 1.3.3.264 keeps `rspackChunk` but changes the request-builder and lyrics-host module IDs to `95096` and `62037`. The installed bridge returned `unsupported` despite an open local connection. A new adapter restores retrieval while retaining the two older adapters and the lyrics-host validation.
+
+All 8 bridge tests and a signed Release build passed. The updated bridge returned 28 ordered `LINE_SYNCED` lines for the same “Faded Words” baseline. The rebuilt local app showed **Spotify 클라이언트** as its source, including after a lyrics reload. The root-owned TestFlight installation in `/Applications` could not be replaced without administrator authentication and remains unchanged; the rebuilt app is running from the ignored build directory. No App Store Connect settings were changed or Cloud build manually started.
+
+These IDs identify private modules in Spotify's bundled JavaScript, rather than a stable public interface. Rebuilding Spotify can renumber them even when the lyrics endpoint remains unchanged. Unknown modules deliberately return `unsupported`; the app then tries the other enabled providers. Passing fixture tests does not establish compatibility with a future Spotify build, so each new adapter also needs live-client verification.

@@ -1,4 +1,4 @@
-// Personal-use adapters for Spotify 1.2.99.317 and 1.3.0.277 desktop clients.
+// Personal-use adapters for Spotify 1.2.99.317, 1.3.0.277 and 1.3.3.264 desktop clients.
 // Module IDs were read from xpui-routes-track-v2.js. Fail closed after incompatible updates.
 // Only the requested track's lyrics leave this context; authentication stays inside Spotify.
 (async function surfLyricsClient(trackID) {
@@ -7,6 +7,7 @@
     }
     let api, host;
     const adapters = [
+        { chunks: globalThis.rspackChunk, apiModule: 95096, hostModule: 62037 },
         { chunks: globalThis.rspackChunk, apiModule: 48331, hostModule: 62192 },
         { chunks: globalThis.rspackChunkclient_web, apiModule: 22358, hostModule: 52388 },
     ];
