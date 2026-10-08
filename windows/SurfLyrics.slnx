@@ -2,4 +2,5 @@
   <Project Path="SurfLyrics.Core/SurfLyrics.Core.csproj" />
   <Project Path="SurfLyrics.Windows/SurfLyrics.Windows.csproj" />
   <Project Path="SurfLyrics.Tests/SurfLyrics.Tests.csproj" />
+  <Project Path="SurfLyrics.Settings/SurfLyrics.Settings.csproj" />
 </Solution>

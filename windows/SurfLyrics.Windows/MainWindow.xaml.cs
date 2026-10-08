@@ -13,6 +13,7 @@ public partial class MainWindow : Window
     public MainWindow(Preferences settings)
     {
         InitializeComponent();
+        LyricText.FontFamily = LyricFont.Family; NextText.FontFamily = LyricFont.Family;
         lyricTransition = new(LyricText);
         nextTransition = new(NextText);
         Width = settings.Width; Height = settings.Height;

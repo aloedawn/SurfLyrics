@@ -1,3 +1,4 @@
+using System.Text.Json;
 namespace SurfLyrics.Windows;
 
 public sealed class Preferences

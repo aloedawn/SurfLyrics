@@ -10,13 +10,18 @@ public sealed class SpotifyClient : ILyricsProvider, IDisposable
 {
     public const int Port = 43827;
     private readonly HttpClient local = new(new HttpClientHandler { UseProxy = false, UseCookies = false, AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(2) };
+    private readonly SemaphoreSlim connectGate = new(1,1);
     private readonly string bridge;
+    private readonly string nowPlayingBridge;
     public SpotifyClient()
     {
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("SurfLyrics.Windows.SpotifyClientBridge.js")
             ?? throw new InvalidOperationException("Missing Spotify bridge resource");
         using var reader = new StreamReader(stream);
         bridge = reader.ReadToEnd();
+        using var playingStream = Assembly.GetExecutingAssembly().GetManifestResourceStream("SurfLyrics.Windows.SpotifyNowPlayingBridge.js") ?? throw new InvalidOperationException("Missing now-playing bridge");
+        using var playingReader = new StreamReader(playingStream);
+        nowPlayingBridge = playingReader.ReadToEnd();
     }
 
     public static Uri? ValidateTarget(JsonElement target)
@@ -93,8 +98,8 @@ public sealed class SpotifyClient : ILyricsProvider, IDisposable
             var id = track.SpotifyId;
             if (id == null)
             {
-                // Windows SMTC omits the Spotify ID. Read only the now-playing link and title.
-                var playing = await EvaluateAsync("(() => { const a = document.querySelector('a[data-testid=\"context-item-link\"][href*=\"/track/\"], [data-testid=\"now-playing-widget\"] a[href*=\"/track/\"]'); if (!a) return {}; const widget = a.closest('[data-testid=\"now-playing-widget\"]'); const artists = (widget || document).querySelectorAll('[data-testid=\"context-item-info-subtitles\"] a[href*=\"/artist/\"]'); const artist = Array.from(artists, a => a.textContent?.trim()).join(', ').slice(0,512); const m = new URL(a.href, location.href).pathname.match(/^\\/track\\/([A-Za-z0-9]{22})$/); return m ? { id: m[1], title: a.textContent?.trim().slice(0,512), artist } : {}; })()", cancellationToken);
+                // Windows SMTC omits the Spotify ID; validate bounded now-playing metadata.
+                var playing = await EvaluateAsync(nowPlayingBridge, cancellationToken);
                 if (!CandidateMatcher.SameTitle(playing.At("title").Text(), track.Title)) return LyricsResult.Missing;
                 if (CandidateMatcher.Score(track, new(playing.At("title").Text(), playing.At("artist").Text(), "", 0)) is not >= .74) return LyricsResult.Missing;
                 id = playing.At("id").Text();
@@ -131,33 +136,38 @@ public sealed class SpotifyClient : ILyricsProvider, IDisposable
 
     public async Task<string> ConnectAsync(CancellationToken ct)
     {
+        await connectGate.WaitAsync(ct);
+        try { return await ConnectCoreAsync(ct); }
+        finally { connectGate.Release(); }
+    }
+    private async Task<string> ConnectCoreAsync(CancellationToken ct)
+    {
         if (await IsReadyAsync(ct)) return "Spotify 가사 연결이 준비되었습니다.";
-        var processes = Process.GetProcessesByName("Spotify");
+        var processes = Process.GetProcessesByName("Spotify").Where(p => p.SessionId == Process.GetCurrentProcess().SessionId && p.MainWindowHandle != nint.Zero).ToArray();
         string? path = null;
         foreach (var process in processes)
             try { path ??= process.MainModule?.FileName; } catch (System.ComponentModel.Win32Exception) { }
-        path ??= Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Spotify", "Spotify.exe");
-        if (!File.Exists(path)) return "Spotify 데스크톱 앱을 먼저 설치하고 한 번 실행해 주세요.";
+        var installation = SpotifyActivation.Find(path);
+        if (installation == null) return "Spotify 데스크톱 앱을 먼저 설치하고 한 번 실행해 주세요.";
         if (IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Any(e => e.Port == Port))
             return "연결 포트가 사용 중입니다. Spotify를 완전히 종료한 뒤 다시 시도해 주세요.";
         // Only called after explicit opt-in. No service, elevation or Spotify file modifications.
         foreach (var process in processes)
         {
-            try { process.Kill(); await process.WaitForExitAsync(ct).WaitAsync(TimeSpan.FromSeconds(5), ct); }
+            try { if (process.MainModule?.FileName is string executable && SpotifyActivation.Matches(installation,executable))
+                { process.Kill(); await process.WaitForExitAsync(ct).WaitAsync(TimeSpan.FromSeconds(5), ct); } }
             catch (InvalidOperationException) { }
             finally { process.Dispose(); }
         }
-        var start = new ProcessStartInfo(path) { UseShellExecute = false };
-        start.ArgumentList.Add("--remote-debugging-address=127.0.0.1");
-        start.ArgumentList.Add($"--remote-debugging-port={Port}");
-        using var launched = Process.Start(start);
-        for (int attempt = 0; attempt < 20; attempt++)
+        int launchedId = SpotifyActivation.Start(installation);
+        for (int attempt = 0; attempt < 40; attempt++)
         {
             await Task.Delay(500, ct);
             var listeners = IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Where(e => e.Port == Port).ToArray();
             if (listeners.Any(e => !IPAddress.IsLoopback(e.Address)))
             {
-                if (launched is { HasExited: false }) launched.Kill();
+                using var launched = Process.GetProcessById(launchedId);
+                if (!launched.HasExited && launched.MainModule?.FileName is string executable && SpotifyActivation.Matches(installation,executable)) launched.Kill();
                 return "로컬 전용 연결을 만들 수 없어 연결 준비를 중단했습니다.";
             }
             if (await IsReadyAsync(ct)) return "Spotify 가사 연결이 준비되었습니다. 음악을 재생해 주세요.";

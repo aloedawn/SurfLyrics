@@ -17,7 +17,6 @@ public partial class App : System.Windows.Application
     private LyricsService service = null!;
     private MainWindow window = null!;
     private TaskbarWindow? taskbar;
-    private SettingsWindow? settingsWindow;
     private Forms.NotifyIcon? tray;
     private Mutex? instance;
     private PlaybackSnapshot? playback;
@@ -51,6 +50,7 @@ public partial class App : System.Windows.Application
         window.Show();
         if ((Settings.TaskbarLyrics && !e.Args.Contains("--window")) || e.Args.Contains("--minimized")) window.Hide();
         timer = new DispatcherTimer(TimeSpan.FromMilliseconds(100), DispatcherPriority.Background, (_, _) => Render(), Dispatcher);
+        _ = ServeSettingsAsync();
         _ = PollAsync();
         if (diagnostics) _ = FinishDiagnosticsAsync();
     }
@@ -66,7 +66,7 @@ public partial class App : System.Windows.Application
 
     private void CreateTray()
     {
-        var menu = new Forms.ContextMenuStrip();
+        var menu = NativeMenu.Create();
         menu.Items.Add("가사 창 표시 / 숨기기", null, (_, _) => Dispatcher.Invoke(ToggleWindow));
         menu.Items.Add("설정", null, (_, _) => Dispatcher.Invoke(OpenSettings));
         menu.Items.Add("가사 다시 불러오기", null, (_, _) => Dispatcher.Invoke(ReloadLyrics));
@@ -147,8 +147,8 @@ public partial class App : System.Windows.Application
         {
             if (!await spotify.IsReadyAsync(lifetime.Token))
             {
-                var message = await ConnectSpotifyAsync();
-                if (settingsWindow != null) settingsWindow.ConnectionStatus.Text = message;
+                await ConnectSpotifyAsync();
+
             }
         }
         catch (OperationCanceledException) { }
@@ -157,7 +157,7 @@ public partial class App : System.Windows.Application
     public async Task<string> ConnectSpotifyAsync()
     {
         try { var message = await spotify.ConnectAsync(lifetime.Token); ReloadLyrics(); return message; }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException or InvalidOperationException or System.Net.NetworkInformation.NetworkInformationException or OperationCanceledException or TimeoutException)
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException or InvalidOperationException or System.Net.NetworkInformation.NetworkInformationException or OperationCanceledException or TimeoutException or COMException)
         { return "Spotify 연결을 준비하지 못했습니다. 다른 가사 소스로 계속합니다."; }
     }
 
@@ -183,15 +183,6 @@ public partial class App : System.Windows.Application
         lyricRequest?.Cancel(); BuildService(); lyrics = null; issue = null; loading = false;
         if (playback != null) StartLyrics(playback.Track);
     }
-    public void OpenSettings()
-    {
-        if (settingsWindow == null)
-        {
-            settingsWindow = new(this) { Owner = window };
-            settingsWindow.Closed += (_, _) => settingsWindow = null;
-        }
-        settingsWindow.Show(); settingsWindow.Activate();
-    }
     public void ToggleWindow()
     {
         if (window.IsVisible) window.Hide();
@@ -203,21 +194,21 @@ public partial class App : System.Windows.Application
         bool canHide = false;
         window.Hide(); canHide = !window.IsVisible; window.Show();
         OpenSettings();
-        await Task.Delay(300);
-        bool settingsLoaded = settingsWindow?.IsLoaded == true;
-        settingsWindow?.Close();
+        await Task.Delay(2500);
+        bool settingsLoaded = settingsReady;
+        CloseSettings();
         File.WriteAllText(diagnosticPath!, JsonSerializer.Serialize(new { windowLoaded = window.IsLoaded, trayVisible = tray?.Visible == true,
             mediaApiAvailable, supportedSessions = media.SupportedSessionCount, hasTrack = playback != null,
             playbackPlayer = playback?.Track.Player, isPlaying = playback?.IsPlaying, lyricsSource = lyrics?.Source,
             syncedLineCount = lyrics?.Lines.Count ?? 0, settingsLoaded, canHide,
             taskbarLocated = taskbar?.TaskbarLocated == true, taskbarVisible = taskbar?.IsVisible == true,
-            spotifyBridgeEmbedded = true, osVersion = Environment.OSVersion.Version.ToString() }, new JsonSerializerOptions { WriteIndented = true }));
+            spotifyBridgeEmbedded = true, pretendardJpBundled = LyricFont.Bundled, spotifyStoreDetected = SpotifyActivation.Find(null)?.AppId != null, osVersion = Environment.OSVersion.Version.ToString() }, new JsonSerializerOptions { WriteIndented = true }));
         ExitApp();
     }
     public void ExitApp()
     {
         if (Exiting) return;
-        Exiting = true; timer?.Stop(); lifetime.Cancel(); lyricRequest?.Cancel();
+        Exiting = true; CloseSettings(); timer?.Stop(); lifetime.Cancel(); lyricRequest?.Cancel();
         if (window != null) { Settings.Left = window.Left; Settings.Top = window.Top; Settings.Width = window.Width; Settings.Height = window.Height; SaveSettings(); }
         Shutdown();
     }

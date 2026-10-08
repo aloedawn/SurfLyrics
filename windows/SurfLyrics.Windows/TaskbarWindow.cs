@@ -30,7 +30,7 @@ public sealed class TaskbarWindow : Window
         ShowActivated = false;
         Topmost = true;
         Width = 40; Height = 32;
-        text = new TextBlock { Text = "♫", Foreground = Brushes.White, FontFamily = new FontFamily("Segoe UI, Malgun Gothic"),
+        text = new TextBlock { Text = "♫", Foreground = Brushes.White, FontFamily = LyricFont.Family,
             VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, Margin = new Thickness(6, 0, 6, 0) };
         Content = text;
@@ -52,21 +52,16 @@ public sealed class TaskbarWindow : Window
 
     private void OpenMenu()
     {
-        var menu = new ContextMenu();
-        void Add(string label, Action action)
-        {
-            var item = new MenuItem { Header = label };
-            item.Click += (_, _) => action(); menu.Items.Add(item);
-        }
-        Add("가사 창 표시 / 숨기기", host.ToggleWindow);
-        Add("설정", host.OpenSettings);
-        Add("재생 / 일시정지", () => _ = host.TogglePlaybackAsync());
-        Add("가사 다시 불러오기", host.ReloadLyrics);
-        menu.Items.Add(new Separator());
-        Add("종료", host.ExitApp);
-        menu.PlacementTarget = text;
-        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
-        menu.IsOpen = true;
+        var menu = NativeMenu.Create();
+        void Add(string label, Action action) => menu.Items.Add(label,null,(_,_) => action());
+        Add("가사 창 표시 / 숨기기",host.ToggleWindow);
+        Add("설정",host.OpenSettings);
+        Add("재생 / 일시정지",() => _ = host.TogglePlaybackAsync());
+        Add("가사 다시 불러오기",host.ReloadLyrics);
+        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        Add("종료",host.ExitApp);
+        menu.Closed += (_,_) => Dispatcher.BeginInvoke(new Action(menu.Dispose));
+        menu.Show(System.Windows.Forms.Cursor.Position);
     }
 
     public void Render(PlaybackSnapshot? playback, TimedLyrics? lyrics, bool loading)

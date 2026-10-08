@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <AssemblyName>SurfLyrics.Settings</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
+    <Content Include="../SurfLyrics.Windows/Assets/SurfLyrics.ico" Link="Assets/SurfLyrics.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="../SurfLyrics.Windows/Preferences.cs" Link="Preferences.cs" />
+    <Compile Include="../SurfLyrics.Windows/SettingsProtocol.cs" Link="SettingsProtocol.cs" />
+  </ItemGroup>
+</Project>
