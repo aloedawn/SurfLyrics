@@ -40,7 +40,7 @@ public sealed class TaskbarWindow : Window
         Focusable = false;
         IsHitTestVisible = false;
         Width = 40; Height = 32;
-        text = new TextBlock { Text = "♫", Foreground = Brushes.White, FontFamily = LyricFont.Family,
+        text = new TextBlock { Text = "♫", Foreground = Brushes.White, FontFamily = LyricFont.Family, FontWeight = FontWeights.Light,
             TextTrimming = TextTrimming.None, TextWrapping = TextWrapping.NoWrap,
             RenderTransform = position, IsHitTestVisible = false };
         surface.Children.Add(text);

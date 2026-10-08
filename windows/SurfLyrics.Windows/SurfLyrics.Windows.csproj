@@ -18,7 +18,7 @@
     <ProjectReference Include="../SurfLyrics.Core/SurfLyrics.Core.csproj" />
     <EmbeddedResource Include="../../SurfLyrics/SpotifyClientBridge.js" Link="SpotifyClientBridge.js" />
     <Resource Include="Assets/SurfLyrics.ico" />
-    <Resource Include="Assets/Fonts/PretendardJP-Regular.otf" />
+    <Resource Include="Assets/Fonts/PretendardJP-Light.otf" />
     <EmbeddedResource Include="SpotifyNowPlayingBridge.js" />
   </ItemGroup>
 </Project>
