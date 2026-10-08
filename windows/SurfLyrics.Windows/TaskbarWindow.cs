@@ -32,7 +32,7 @@ public sealed class TaskbarWindow : Window
         Width = 40; Height = 32;
         text = new TextBlock { Text = "♫", Foreground = Brushes.White, FontFamily = new FontFamily("Segoe UI, Malgun Gothic"),
             VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center,
-            TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, Margin = new Thickness(8, 0, 8, 0) };
+            TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, Margin = new Thickness(6, 0, 6, 0) };
         Content = text;
         transition = new(text, () => nextLayout = default);
         Cursor = Cursors.Hand;
@@ -101,8 +101,8 @@ public sealed class TaskbarWindow : Window
         int visibleHeight = Math.Min(bounds.Bottom, monitor.Monitor.Bottom) - Math.Max(bounds.Top, monitor.Monitor.Top);
         if (visibleHeight < 20 * scale) { if (IsVisible) Hide(); return; }
         text.Measure(new Size(420, Math.Max(24, (bounds.Bottom - bounds.Top) / scale)));
-        int width = (int)Math.Ceiling(Math.Clamp(text.DesiredSize.Width, 36, 440) * scale);
-        int right = icons.Left - (int)(8 * scale);
+        int width = (int)Math.Ceiling(Math.Clamp(text.DesiredSize.Width, 28, 440) * scale);
+        int right = icons.Left;
         int left = right - width;
         if (left < bounds.Left + 200 * scale) { if (IsVisible) Hide(); return; }
         Width = width / scale; Height = (bounds.Bottom - bounds.Top) / scale;
