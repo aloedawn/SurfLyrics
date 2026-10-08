@@ -1,28 +1,30 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Threading;
+using System.Windows.Media.Animation;
 
 namespace SurfLyrics.Windows;
 
-// A transparent, non-activating window positioned beside the notification area.
+// A fixed, mouse-transparent surface over the primary taskbar. Only the glyphs
+// move: resizing a layered HWND on each frame interrupts smooth composition.
 // Explorer is never patched, injected into, or restarted.
 public sealed class TaskbarWindow : Window
 {
     private readonly TextBlock text;
+    private readonly Canvas surface = new() { ClipToBounds = false, IsHitTestVisible = false };
+    private readonly TranslateTransform position = new();
     private readonly LyricTextTransition transition;
     private readonly App host;
     private nint handle;
     private DateTimeOffset nextLayout;
-    private readonly DispatcherTimer motionTimer;
-    private long motionStarted;
-    private double motionFrom, motionTo, currentWidth, layoutScale;
-    private int anchorRight, anchorTop, anchorHeight;
+    private double destination, layoutScale;
+    private Native.Rect placement;
+    private int anchorRight;
     private bool hasPlacement;
     public bool TaskbarLocated { get; private set; }
+    public bool ClickThrough { get; private set; }
 
     public TaskbarWindow(App app)
     {
@@ -35,47 +37,33 @@ public sealed class TaskbarWindow : Window
         ShowInTaskbar = false;
         ShowActivated = false;
         Topmost = true;
+        Focusable = false;
+        IsHitTestVisible = false;
         Width = 40; Height = 32;
         text = new TextBlock { Text = "♫", Foreground = Brushes.White, FontFamily = LyricFont.Family,
-            VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center,
-            TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, Margin = new Thickness(6, 0, 6, 0) };
-        Content = text;
-        motionTimer = new DispatcherTimer(DispatcherPriority.Render, Dispatcher) { Interval = TimeSpan.FromMilliseconds(16) };
-        motionTimer.Tick += (_, _) => AnimateWidth();
-        Closed += (_, _) => motionTimer.Stop();
+            TextTrimming = TextTrimming.None, TextWrapping = TextWrapping.NoWrap,
+            RenderTransform = position, IsHitTestVisible = false };
+        surface.Children.Add(text);
+        Content = surface;
         transition = new(text, () =>
         {
             UpdateFontSize();
             nextLayout = DateTimeOffset.UtcNow.AddMilliseconds(500);
             if (host.Settings.TaskbarLyrics) PositionBesideTray();
         });
-        Cursor = Cursors.Hand;
         SourceInitialized += (_, _) =>
         {
             handle = new WindowInteropHelper(this).Handle;
-            var source = HwndSource.FromHwnd(handle);
-            source?.AddHook((nint hwnd, int message, nint wParam, nint lParam, ref bool handled) =>
+            const long flags = 0x00000020 | 0x00000080 | 0x00080000 | 0x08000000;
+            Native.SetWindowLongPtr(handle, -20, new nint(Native.GetWindowLongPtr(handle, -20).ToInt64() | flags));
+            ClickThrough = (Native.GetWindowLongPtr(handle, -20).ToInt64() & flags) == flags;
+            HwndSource.FromHwnd(handle)?.AddHook((nint hwnd, int message, nint wParam, nint lParam, ref bool handled) =>
             {
+                if (message == 0x0084) { handled = true; return new nint(-1); } // HTTRANSPARENT
                 if (message == 0x0021) { handled = true; return new nint(3); } // MA_NOACTIVATE
                 return nint.Zero;
             });
         };
-        MouseLeftButtonUp += (_, _) => OpenMenu();
-        MouseRightButtonUp += (_, _) => OpenMenu();
-    }
-
-    private void OpenMenu()
-    {
-        var menu = NativeMenu.Create();
-        void Add(string label, Action action) => menu.Items.Add(label,null,(_,_) => action());
-        Add("가사 창 표시 / 숨기기",host.ToggleWindow);
-        Add("설정",host.OpenSettings);
-        Add("재생 / 일시정지",() => _ = host.TogglePlaybackAsync());
-        Add("가사 다시 불러오기",host.ReloadLyrics);
-        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-        Add("종료",host.ExitApp);
-        menu.Closed += (_,_) => Dispatcher.BeginInvoke(new Action(menu.Dispose));
-        menu.Show(System.Windows.Forms.Cursor.Position);
     }
 
     public void Render(PlaybackSnapshot? playback, TimedLyrics? lyrics, bool loading)
@@ -87,9 +75,7 @@ public sealed class TaskbarWindow : Window
             : playback != null ? "♫ " + playback.Track.Title + " — " + playback.Track.Artist : "♫";
         transition.SetText(value, host.Settings.FadeLyrics);
         UpdateFontSize();
-        if (!host.Settings.FadeLyrics && motionTimer.IsEnabled) FinishMotion();
-        ToolTip = playback == null ? "SurfLyrics · Spotify 또는 Apple Music에서 음악을 재생해 주세요"
-            : playback.Track.Title + " — " + playback.Track.Artist + "\n" + (loading ? "가사를 찾는 중…" : lyrics?.Source ?? "동기화 가사 없음") + "\n클릭하여 메뉴 열기";
+        if (!host.Settings.FadeLyrics || !SystemParameters.ClientAreaAnimation) FinishMotion();
         if (DateTimeOffset.UtcNow < nextLayout) return;
         nextLayout = DateTimeOffset.UtcNow.AddMilliseconds(500);
         PositionBesideTray();
@@ -109,29 +95,44 @@ public sealed class TaskbarWindow : Window
         if (!Native.GetMonitorInfo(Native.MonitorFromWindow(bar, 2), ref monitor)) return;
         double scale = Native.GetDpiForWindow(bar) / 96.0;
         if (scale <= 0) scale = 1;
+        int height = bounds.Bottom - bounds.Top;
         int visibleHeight = Math.Min(bounds.Bottom, monitor.Monitor.Bottom) - Math.Max(bounds.Top, monitor.Monitor.Top);
         if (visibleHeight < 20 * scale) { HideDisplay(); return; }
-        text.Measure(new Size(420, Math.Max(24, (bounds.Bottom - bounds.Top) / scale)));
-        int width = (int)Math.Ceiling(Math.Clamp(text.DesiredSize.Width, 28, 440) * scale);
-        int right = icons.Left;
-        int left = right - width;
-        if (left < bounds.Left + 200 * scale) { HideDisplay(); return; }
-        int height = bounds.Bottom - bounds.Top;
-        bool anchorChanged = !hasPlacement || !IsVisible || anchorRight != right
-            || anchorTop != bounds.Top || anchorHeight != height || layoutScale != scale;
-        anchorRight = right; anchorTop = bounds.Top; anchorHeight = height; layoutScale = scale;
+        bool anchorChanged = !hasPlacement || !IsVisible || anchorRight != icons.Left
+            || !placement.Equals(bounds) || layoutScale != scale;
+        anchorRight = icons.Left; placement = bounds; layoutScale = scale;
         hasPlacement = true;
+        if (anchorChanged)
+        {
+            Left = bounds.Left / scale; Top = bounds.Top / scale;
+            Width = (bounds.Right - bounds.Left) / scale; Height = height / scale;
+            if (!IsVisible) Show();
+            Native.SetWindowPos(handle, new nint(-1), bounds.Left, bounds.Top,
+                bounds.Right - bounds.Left, height, 0x0010 | 0x0040);
+        }
+
+        // Measure without a width constraint. The whole new line is drawn at the
+        // previous X, even when it temporarily overlaps notification icons.
+        text.Width = double.NaN;
+        text.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        double width = Math.Max(16, Math.Ceiling(text.DesiredSize.Width));
+        text.Width = width;
+        Canvas.SetTop(text, (height / scale - text.DesiredSize.Height) / 2);
+        double target = (anchorRight - bounds.Left) / scale - 6 - width;
         if (anchorChanged || !host.Settings.FadeLyrics || !SystemParameters.ClientAreaAnimation)
         {
-            motionTo = width;
+            destination = target;
             FinishMotion();
         }
-        else if (motionTo != width)
+        else if (Math.Abs(destination - target) > .01)
         {
-            // Retarget from the visible width, including during a rapid seek.
-            motionFrom = currentWidth; motionTo = width;
-            motionStarted = Stopwatch.GetTimestamp();
-            motionTimer.Start();
+            double from = position.X; // Includes the currently animated value after a seek.
+            destination = target;
+            position.X = target;
+            var motion = new DoubleAnimation(from, target, new Duration(TimeSpan.FromMilliseconds(260)))
+            { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }, FillBehavior = FillBehavior.Stop };
+            AnimationCadence.Apply(motion);
+            position.BeginAnimation(TranslateTransform.XProperty, motion, HandoffBehavior.SnapshotAndReplace);
         }
     }
 
@@ -144,39 +145,15 @@ public sealed class TaskbarWindow : Window
         nextLayout = default;
     }
 
-    private void AnimateWidth()
-    {
-        double progress = Math.Clamp(Stopwatch.GetElapsedTime(motionStarted).TotalMilliseconds / 220, 0, 1);
-        double eased = progress * progress * (3 - 2 * progress);
-        ApplyWidth(motionFrom + (motionTo - motionFrom) * eased);
-        if (progress >= 1) motionTimer.Stop();
-    }
-
     private void FinishMotion()
     {
-        motionTimer.Stop();
-        ApplyWidth(motionTo);
-    }
-
-    private void ApplyWidth(double width)
-    {
-        using var coordinates = new Native.PhysicalPixels();
-        currentWidth = width;
-        int pixels = (int)Math.Round(width);
-        if (!IsVisible)
-        {
-            Left = (anchorRight - pixels) / layoutScale; Top = anchorTop / layoutScale;
-            Width = pixels / layoutScale; Height = anchorHeight / layoutScale;
-            Show();
-        }
-        // Move and resize atomically in physical pixels. The tray-side edge
-        // stays fixed throughout both growing and shrinking transitions.
-        Native.SetWindowPos(handle, new nint(-1), anchorRight - pixels, anchorTop, pixels, anchorHeight, 0x0010 | 0x0040);
+        position.BeginAnimation(TranslateTransform.XProperty, null);
+        position.X = destination;
     }
 
     private void HideDisplay()
     {
-        motionTimer.Stop();
+        FinishMotion();
         hasPlacement = false;
         if (IsVisible) Hide();
     }
@@ -199,6 +176,8 @@ public sealed class TaskbarWindow : Window
         [DllImport("user32.dll")] internal static extern bool GetWindowRect(nint window, out Rect rect);
         [DllImport("user32.dll")] internal static extern bool IsWindowVisible(nint window);
         [DllImport("user32.dll")] internal static extern uint GetDpiForWindow(nint window);
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] internal static extern nint GetWindowLongPtr(nint window, int index);
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] internal static extern nint SetWindowLongPtr(nint window, int index, nint value);
         [DllImport("user32.dll")] internal static extern bool SetWindowPos(nint window, nint after, int x, int y, int width, int height, uint flags);
         [DllImport("user32.dll")] internal static extern nint GetForegroundWindow();
         [DllImport("user32.dll")] internal static extern nint MonitorFromWindow(nint window, uint flags);

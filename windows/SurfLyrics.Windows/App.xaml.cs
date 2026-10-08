@@ -15,7 +15,6 @@ public partial class App : System.Windows.Application
     private readonly SpotifyClient spotify = new();
     private readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(10), MaxResponseContentBufferSize = 1_000_000 };
     private LyricsService service = null!;
-    private MainWindow window = null!;
     private TaskbarWindow? taskbar;
     private Forms.NotifyIcon? tray;
     private Mutex? instance;
@@ -44,11 +43,8 @@ public partial class App : System.Windows.Application
         Settings = Preferences.Load();
         http.DefaultRequestHeaders.UserAgent.ParseAdd("SurfLyrics/1.0 (https://github.com/aloedawn/surflyrics)");
         BuildService();
-        window = new(Settings); MainWindow = window;
         taskbar = new(this);
         CreateTray();
-        window.Show();
-        if ((Settings.TaskbarLyrics && !e.Args.Contains("--window")) || e.Args.Contains("--minimized")) window.Hide();
         timer = new DispatcherTimer(TimeSpan.FromMilliseconds(100), DispatcherPriority.Background, (_, _) => Render(), Dispatcher);
         _ = ServeSettingsAsync();
         _ = PollAsync();
@@ -67,15 +63,14 @@ public partial class App : System.Windows.Application
     private void CreateTray()
     {
         var menu = NativeMenu.Create();
-        menu.Items.Add("가사 창 표시 / 숨기기", null, (_, _) => Dispatcher.Invoke(ToggleWindow));
         menu.Items.Add("설정", null, (_, _) => Dispatcher.Invoke(OpenSettings));
+        menu.Items.Add("재생 / 일시정지", null, (_, _) => Dispatcher.Invoke(() => _ = TogglePlaybackAsync()));
         menu.Items.Add("가사 다시 불러오기", null, (_, _) => Dispatcher.Invoke(ReloadLyrics));
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("종료", null, (_, _) => Dispatcher.Invoke(ExitApp));
         var resource = GetResourceStream(new Uri("pack://application:,,,/Assets/SurfLyrics.ico"));
         using var stream = resource.Stream;
         tray = new Forms.NotifyIcon { Icon = new Icon(stream), Text = "SurfLyrics", ContextMenuStrip = menu, Visible = true };
-        tray.DoubleClick += (_, _) => Dispatcher.Invoke(ToggleWindow);
     }
 
     private async Task PollAsync()
@@ -168,8 +163,7 @@ public partial class App : System.Windows.Application
     }
     public void Render()
     {
-        if (Exiting || window == null) return;
-        if (window.IsVisible) window.Render(playback, lyrics, loading, issue);
+        if (Exiting) return;
         taskbar?.Render(playback, lyrics, loading);
         if (tray != null)
         {
@@ -183,24 +177,17 @@ public partial class App : System.Windows.Application
         lyricRequest?.Cancel(); BuildService(); lyrics = null; issue = null; loading = false;
         if (playback != null) StartLyrics(playback.Track);
     }
-    public void ToggleWindow()
-    {
-        if (window.IsVisible) window.Hide();
-        else { window.Show(); window.Activate(); Render(); }
-    }
     private async Task FinishDiagnosticsAsync()
     {
         await Task.Delay(15_000);
-        bool canHide = false;
-        window.Hide(); canHide = !window.IsVisible; window.Show();
         OpenSettings();
         await Task.Delay(2500);
         bool settingsLoaded = settingsReady;
         CloseSettings();
-        File.WriteAllText(diagnosticPath!, JsonSerializer.Serialize(new { windowLoaded = window.IsLoaded, trayVisible = tray?.Visible == true,
+        File.WriteAllText(diagnosticPath!, JsonSerializer.Serialize(new { taskbarLoaded = taskbar?.IsLoaded == true, trayVisible = tray?.Visible == true,
             mediaApiAvailable, supportedSessions = media.SupportedSessionCount, hasTrack = playback != null,
             playbackPlayer = playback?.Track.Player, isPlaying = playback?.IsPlaying, lyricsSource = lyrics?.Source,
-            syncedLineCount = lyrics?.Lines.Count ?? 0, settingsLoaded, canHide,
+            syncedLineCount = lyrics?.Lines.Count ?? 0, settingsLoaded, clickThrough = taskbar?.ClickThrough == true,
             taskbarLocated = taskbar?.TaskbarLocated == true, taskbarVisible = taskbar?.IsVisible == true,
             spotifyBridgeEmbedded = true, pretendardJpBundled = LyricFont.Bundled, spotifyStoreDetected = SpotifyActivation.Find(null)?.AppId != null, osVersion = Environment.OSVersion.Version.ToString() }, new JsonSerializerOptions { WriteIndented = true }));
         ExitApp();
@@ -209,7 +196,7 @@ public partial class App : System.Windows.Application
     {
         if (Exiting) return;
         Exiting = true; CloseSettings(); timer?.Stop(); lifetime.Cancel(); lyricRequest?.Cancel();
-        if (window != null) { Settings.Left = window.Left; Settings.Top = window.Top; Settings.Width = window.Width; Settings.Height = window.Height; SaveSettings(); }
+        SaveSettings();
         Shutdown();
     }
     protected override void OnExit(ExitEventArgs e)

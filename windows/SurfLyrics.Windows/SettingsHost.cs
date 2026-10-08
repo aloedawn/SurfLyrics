@@ -44,15 +44,13 @@ public partial class App
         }
         if (request.Action == "connect") return new(true, await ConnectSpotifyAsync());
         if (request.Action != "save" || request.Settings is not Preferences next) return new(false,"잘못된 설정 요청입니다.");
-        if (!double.IsFinite(next.FontSize) || next.FontSize is <18 or >44
-            || !double.IsFinite(next.TaskbarFontSize) || next.TaskbarFontSize is <10 or >18 || next.OffsetMs is <-5000 or >5000)
+        if (!double.IsFinite(next.TaskbarFontSize) || next.TaskbarFontSize is <10 or >18 || next.OffsetMs is <-5000 or >5000)
             return new(false,"설정 값이 허용 범위를 벗어났습니다.");
         try
         {
             using var key = Registry.CurrentUser.CreateSubKey(StartupKey);
             if (request.StartAtLogin) key.SetValue("SurfLyrics", "\"" + Environment.ProcessPath + "\" --minimized");
             else key.DeleteValue("SurfLyrics",throwOnMissingValue:false);
-            next.Left = Settings.Left; next.Top = Settings.Top; next.Width = Settings.Width; next.Height = Settings.Height;
             if (!next.Save()) return new(false,"설정을 저장하지 못했습니다.");
             Settings = next; ReloadLyrics(); Render();
             return new(true,"설정을 저장했습니다.");

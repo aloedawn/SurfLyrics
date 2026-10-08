@@ -19,7 +19,7 @@ public sealed class LyricTextTransition(TextBlock text, Action? textChanged = nu
             return;
         }
         requestedText = value;
-        if (!fade || !text.IsVisible || text.Text.Length == 0)
+        if (!fade || !SystemParameters.ClientAreaAnimation || !text.IsVisible || text.Text.Length == 0)
         {
             ShowImmediately(value);
             return;
@@ -59,7 +59,11 @@ public sealed class LyricTextTransition(TextBlock text, Action? textChanged = nu
         textChanged?.Invoke();
     }
 
-    private static DoubleAnimation Animation(double from, double to, int milliseconds) => new(from, to,
-        new Duration(TimeSpan.FromMilliseconds(milliseconds)))
-    { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseInOut } };
+    private static DoubleAnimation Animation(double from, double to, int milliseconds)
+    {
+        var animation = new DoubleAnimation(from, to, new Duration(TimeSpan.FromMilliseconds(milliseconds)))
+        { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } };
+        AnimationCadence.Apply(animation);
+        return animation;
+    }
 }

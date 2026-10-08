@@ -20,6 +20,5 @@
     <Resource Include="Assets/SurfLyrics.ico" />
     <Resource Include="Assets/Fonts/PretendardJP-Regular.otf" />
     <EmbeddedResource Include="SpotifyNowPlayingBridge.js" />
-    <Resource Include="../../docs/assets/surflyrics.png" Link="Assets/SurfLyrics.png" />
   </ItemGroup>
 </Project>

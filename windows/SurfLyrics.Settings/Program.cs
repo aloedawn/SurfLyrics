@@ -38,8 +38,8 @@ internal sealed class SettingsWindow : Window
 {
     private readonly StackPanel content = new() { Spacing = 16, Padding = new Thickness(28, 24, 28, 28) };
     private readonly ToggleSwitch spotify = Toggle("Spotify 클라이언트"), lrclib = Toggle("LRCLIB"), musixmatch = Toggle("Musixmatch");
-    private readonly ToggleSwitch autoConnect = Toggle("Spotify 자동 연결"), taskbar = Toggle("작업 표시줄에 가사 표시"), fade = Toggle("가사 전환 시 페이드"), onTop = Toggle("보조 가사 창 항상 위에"), startup = Toggle("Windows 로그인 시 실행");
-    private readonly Slider taskbarSize = Slider(10,18,1), windowSize = Slider(18,44,1), offset = Slider(-5000,5000,100);
+    private readonly ToggleSwitch autoConnect = Toggle("Spotify 자동 연결"), taskbar = Toggle("작업 표시줄에 가사 표시"), fade = Toggle("가사 전환 시 페이드"), startup = Toggle("Windows 로그인 시 실행");
+    private readonly Slider taskbarSize = Slider(10,18,1), offset = Slider(-5000,5000,100);
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button connect = new() { Content = "Spotify 연결", HorizontalAlignment = HorizontalAlignment.Left };
     private readonly Button save = new() { Content = "저장", HorizontalAlignment = HorizontalAlignment.Right };
@@ -66,8 +66,6 @@ internal sealed class SettingsWindow : Window
         content.Children.Add(new TextBlock { Text = "자동 연결을 켜면 필요할 때 Spotify를 다시 시작합니다. 로컬 연결은 이 PC에서만 열립니다.", TextWrapping = TextWrapping.Wrap, Opacity = .7, FontSize = 12 });
         Section("가사 표시", taskbar, fade);
         LabeledSlider("작업 표시줄 글자 크기", taskbarSize, value => value.ToString("0"));
-        LabeledSlider("보조 가사 창 글자 크기", windowSize, value => value.ToString("0"));
-        content.Children.Add(onTop);
         LabeledSlider("가사 시간 조정", offset, value => (value / 1000).ToString("+0.0;-0.0;0.0") + "초");
         Section("시작", startup);
         content.Children.Add(save);
@@ -117,8 +115,8 @@ internal sealed class SettingsWindow : Window
             original = response.Settings ?? throw new IOException(response.Message);
             spotify.IsOn = original.SpotifyLyrics; lrclib.IsOn = original.Lrclib; musixmatch.IsOn = original.Musixmatch;
             autoConnect.IsOn = original.AutoConnectSpotify; taskbar.IsOn = original.TaskbarLyrics; fade.IsOn = original.FadeLyrics;
-            onTop.IsOn = original.AlwaysOnTop; startup.IsOn = response.StartAtLogin;
-            taskbarSize.Value = original.TaskbarFontSize; windowSize.Value = original.FontSize; offset.Value = original.OffsetMs;
+            startup.IsOn = response.StartAtLogin;
+            taskbarSize.Value = original.TaskbarFontSize; offset.Value = original.OffsetMs;
             save.IsEnabled = true; connect.IsEnabled = true;
         }
         catch (Exception ex) when (ex is IOException or OperationCanceledException or JsonException or UnauthorizedAccessException)
@@ -143,7 +141,7 @@ internal sealed class SettingsWindow : Window
         save.IsEnabled = false;
         var value = new Preferences { SpotifyLyrics = spotify.IsOn, Lrclib = lrclib.IsOn, Musixmatch = musixmatch.IsOn,
             AutoConnectSpotify = autoConnect.IsOn, TaskbarLyrics = taskbar.IsOn, FadeLyrics = fade.IsOn,
-            AlwaysOnTop = onTop.IsOn, TaskbarFontSize = taskbarSize.Value, FontSize = windowSize.Value, OffsetMs = (int)offset.Value };
+            TaskbarFontSize = taskbarSize.Value, OffsetMs = (int)offset.Value };
         try
         {
             var response = await RequestAsync(new("save",value,startup.IsOn));
