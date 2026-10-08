@@ -5,7 +5,18 @@
 
 # SurfLyrics
 
-Spotify에서 듣고 있는 곡의 동기화 가사를 macOS 메뉴 막대에 표시하는 개인용 앱입니다.
+Spotify에서 듣고 있는 곡의 동기화 가사를 표시하는 개인용 앱입니다. macOS에서는 메뉴 막대에, Windows에서는 작업 표시줄 오른쪽 알림 영역 옆에 표시합니다.
+
+## Windows 버전
+
+Windows 11 x64용 네이티브 WPF 앱을 `windows/`에 제공합니다. Spotify / Apple Music의 Windows 미디어 세션을 읽으며, 기존 Spotify 가사 브리지를 공유합니다. .NET 10 SDK로 빌드한 자체 포함 실행 파일은 .NET 설치 없이 사용할 수 있습니다.
+
+```powershell
+pwsh -File scripts/test-windows.ps1
+pwsh -File scripts/build-windows.ps1 -Run
+```
+
+**[Windows 설치·연결·설정 안내 →](docs/WINDOWS.md)**
 
 **Spotify 클라이언트 → LRCLIB → Musixmatch** 순서로 가사를 찾습니다. 간주에는 대기 상태와 같은 큰 음표를 표시하고, 다음 가사가 시작되면 다시 텍스트로 바뀝니다. 시간 정보가 없는 가사는 재생 위치에 맞춘 가사로 표시하지 않습니다.
 
@@ -57,6 +68,7 @@ SURFLYRICS_SIGNING_IDENTITY='Developer ID Application: Your Name (2RDF6J3XVV)' \
 | `SurfLyrics/` | 메뉴 막대 앱, 가사 공급자, 자동 연결, Icon Composer 원본 |
 | `SpotifyConnectionHelper/` | 연결 준비 후 종료하는 도우미와 아이콘 원본 |
 | `SurfLyricsTests/` | 가사 매칭·순서·취소·연결 실패 등 핵심 회귀 검사 |
+| `windows/` | Windows WPF 앱, 가사 핵심 로직, Windows 회귀 검사 |
 | `scripts/` | 도우미 빌드·패키징과 브리지 검사 |
 | `docs/` | 설치·개발 안내와 아이콘 미리보기 |
 

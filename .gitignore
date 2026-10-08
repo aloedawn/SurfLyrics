@@ -21,3 +21,10 @@ SurfLyrics.xcodeproj/project.xcworkspace/xcuserdata/
 
 # Local agent settings
 /.claude/settings.local.json
+
+# Windows / .NET
+**/bin/
+**/obj/
+.vs/
+*.user
+*.suo

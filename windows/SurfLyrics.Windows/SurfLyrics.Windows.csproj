@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets/SurfLyrics.ico</ApplicationIcon>
+    <AssemblyName>SurfLyrics</AssemblyName>
+    <RootNamespace>SurfLyrics.Windows</RootNamespace>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../SurfLyrics.Core/SurfLyrics.Core.csproj" />
+    <EmbeddedResource Include="../../SurfLyrics/SpotifyClientBridge.js" Link="SpotifyClientBridge.js" />
+    <Resource Include="Assets/SurfLyrics.ico" />
+    <Resource Include="../../docs/assets/surflyrics.png" Link="Assets/SurfLyrics.png" />
+  </ItemGroup>
+</Project>
