@@ -7,10 +7,14 @@ namespace SurfLyrics.Windows;
 
 public partial class MainWindow : Window
 {
+    private readonly LyricTextTransition lyricTransition;
+    private readonly LyricTextTransition nextTransition;
     private App Host => (App)System.Windows.Application.Current;
     public MainWindow(Preferences settings)
     {
         InitializeComponent();
+        lyricTransition = new(LyricText);
+        nextTransition = new(NextText);
         Width = settings.Width; Height = settings.Height;
         Topmost = settings.AlwaysOnTop;
         var area = SystemParameters.WorkArea;
@@ -29,8 +33,8 @@ public partial class MainWindow : Window
         PlaybackButton.Content = playback?.IsPlaying == true ? "일시정지" : "재생";
         if (playback == null)
         {
-            LyricText.Text = "♫"; LyricText.FontSize = 42;
-            NextText.Text = issue ?? "Spotify 또는 Apple Music에서 음악을 재생해 주세요";
+            lyricTransition.SetText("♫", settings.FadeLyrics); LyricText.FontSize = 42;
+            nextTransition.SetText(issue ?? "Spotify 또는 Apple Music에서 음악을 재생해 주세요", settings.FadeLyrics);
             TrackText.Text = "음악을 기다리는 중";
             SourceText.Text = "동기화 가사 · Spotify / LRCLIB / Musixmatch";
             TrackProgress.Value = 0;
@@ -42,10 +46,11 @@ public partial class MainWindow : Window
         long position = playback.PositionNow + settings.OffsetMs;
         int index = lyrics?.IndexAt(position) ?? -1;
         string current = index >= 0 ? lyrics!.Lines[index].Text : "";
-        LyricText.Text = TimedLyrics.IsInstrumental(current) ? "♫" : current;
-        if (LyricText.Text == "♫") LyricText.FontSize = 42;
-        NextText.Text = lyrics != null && index + 1 < lyrics.Lines.Count
-            ? lyrics.Lines[index + 1].Text : loading ? "가사를 불러오고 있습니다" : lyrics == null ? "음악을 들으며 잠시 기다려 주세요" : "";
+        var value = TimedLyrics.IsInstrumental(current) ? "♫" : current;
+        lyricTransition.SetText(value, settings.FadeLyrics);
+        if (value == "♫") LyricText.FontSize = 42;
+        nextTransition.SetText(lyrics != null && index + 1 < lyrics.Lines.Count
+            ? lyrics.Lines[index + 1].Text : loading ? "가사를 불러오고 있습니다" : lyrics == null ? "음악을 들으며 잠시 기다려 주세요" : "", settings.FadeLyrics);
         TrackProgress.Value = track.DurationMs > 0 ? Math.Clamp(playback.PositionNow * 100.0 / track.DurationMs, 0, 100) : 0;
     }
 

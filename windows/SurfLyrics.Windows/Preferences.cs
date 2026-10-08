@@ -8,6 +8,7 @@ public sealed class Preferences
     public bool AutoConnectSpotify { get; set; }
     public bool AlwaysOnTop { get; set; } = true;
     public bool TaskbarLyrics { get; set; } = true;
+    public bool FadeLyrics { get; set; } = true;
     public double TaskbarFontSize { get; set; } = 13;
     public double FontSize { get; set; } = 28;
     public int OffsetMs { get; set; }

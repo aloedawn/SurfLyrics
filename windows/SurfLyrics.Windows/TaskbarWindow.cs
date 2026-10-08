@@ -12,10 +12,10 @@ namespace SurfLyrics.Windows;
 public sealed class TaskbarWindow : Window
 {
     private readonly TextBlock text;
+    private readonly LyricTextTransition transition;
     private readonly App host;
     private nint handle;
     private DateTimeOffset nextLayout;
-    private string previousText = "";
     public bool TaskbarLocated { get; private set; }
 
     public TaskbarWindow(App app)
@@ -34,6 +34,7 @@ public sealed class TaskbarWindow : Window
             VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, Margin = new Thickness(8, 0, 8, 0) };
         Content = text;
+        transition = new(text, () => nextLayout = default);
         Cursor = Cursors.Hand;
         SourceInitialized += (_, _) =>
         {
@@ -75,11 +76,10 @@ public sealed class TaskbarWindow : Window
         var line = index >= 0 ? lyrics!.Lines[index].Text : null;
         string value = line != null ? TimedLyrics.IsInstrumental(line) ? "♫" : line
             : playback != null ? "♫ " + playback.Track.Title + " — " + playback.Track.Artist : "♫";
-        text.Text = value;
+        transition.SetText(value, host.Settings.FadeLyrics);
         text.FontSize = value == "♫" ? Math.Max(18, host.Settings.TaskbarFontSize) : host.Settings.TaskbarFontSize;
         ToolTip = playback == null ? "SurfLyrics · Spotify 또는 Apple Music에서 음악을 재생해 주세요"
             : playback.Track.Title + " — " + playback.Track.Artist + "\n" + (loading ? "가사를 찾는 중…" : lyrics?.Source ?? "동기화 가사 없음") + "\n클릭하여 메뉴 열기";
-        if (value != previousText) { previousText = value; nextLayout = default; }
         if (DateTimeOffset.UtcNow < nextLayout) return;
         nextLayout = DateTimeOffset.UtcNow.AddMilliseconds(500);
         PositionBesideTray();

@@ -15,6 +15,7 @@ public partial class SettingsWindow : Window
         SpotifySource.IsChecked = settings.SpotifyLyrics; LrclibSource.IsChecked = settings.Lrclib; MusixmatchSource.IsChecked = settings.Musixmatch;
         AutoConnect.IsChecked = settings.AutoConnectSpotify; OnTop.IsChecked = settings.AlwaysOnTop;
         TaskbarDisplay.IsChecked = settings.TaskbarLyrics; TaskbarFontSlider.Value = settings.TaskbarFontSize;
+        FadeAnimation.IsChecked = settings.FadeLyrics;
         FontSlider.Value = settings.FontSize; OffsetSlider.Value = settings.OffsetMs;
         using var key = Registry.CurrentUser.OpenSubKey(StartupKey);
         StartAtLogin.IsChecked = key?.GetValue("SurfLyrics") is string;
@@ -54,6 +55,7 @@ public partial class SettingsWindow : Window
         settings.Musixmatch = MusixmatchSource.IsChecked == true; settings.AutoConnectSpotify = AutoConnect.IsChecked == true;
         settings.AlwaysOnTop = OnTop.IsChecked == true; settings.FontSize = FontSlider.Value; settings.OffsetMs = (int)OffsetSlider.Value;
         settings.TaskbarLyrics = TaskbarDisplay.IsChecked == true; settings.TaskbarFontSize = TaskbarFontSlider.Value;
+        settings.FadeLyrics = FadeAnimation.IsChecked == true;
         if (!host.SaveSettings()) { System.Windows.MessageBox.Show(this, "설정을 저장하지 못했습니다. 폴더 쓰기 권한을 확인해 주세요.", "SurfLyrics"); return; }
         host.ReloadLyrics(); host.Render(); Close();
     }

@@ -14,6 +14,7 @@
   <TextBlock x:Name="ConnectionStatus" Text="Spotify 연결을 준비하지 않아도 다른 가사 소스를 사용할 수 있습니다." FontSize="11" Foreground="{StaticResource Accent}" TextWrapping="Wrap" Margin="0,8,0,0" />
   <TextBlock Text="표시" FontSize="15" Foreground="{StaticResource Accent}" Margin="0,24,0,5" />
   <CheckBox x:Name="TaskbarDisplay" Content="작업 표시줄 오른쪽에 가사 표시" />
+  <CheckBox x:Name="FadeAnimation" Content="가사 전환 시 페이드 애니메이션" />
   <TextBlock x:Name="TaskbarFontLabel" Text="작업 표시줄 글자 크기" FontSize="12" Margin="0,10,0,8" />
   <Slider x:Name="TaskbarFontSlider" Minimum="10" Maximum="18" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SliderChanged" />
   <CheckBox x:Name="OnTop" Content="가사 창을 항상 위에 표시" />
