@@ -189,8 +189,21 @@ public partial class App : System.Windows.Application
             playbackPlayer = playback?.Track.Player, isPlaying = playback?.IsPlaying, lyricsSource = lyrics?.Source,
             syncedLineCount = lyrics?.Lines.Count ?? 0, settingsLoaded, clickThrough = taskbar?.ClickThrough == true,
             taskbarLocated = taskbar?.TaskbarLocated == true, taskbarVisible = taskbar?.IsVisible == true,
-            spotifyBridgeEmbedded = true, pretendardJpBundled = LyricFont.Bundled, spotifyStoreDetected = SpotifyActivation.Find(null)?.AppId != null, osVersion = Environment.OSVersion.Version.ToString() }, new JsonSerializerOptions { WriteIndented = true }));
+            trayIconColored = TrayIconHasColor(), spotifyBridgeEmbedded = true, pretendardJpBundled = LyricFont.Bundled, spotifyStoreDetected = SpotifyActivation.Find(null)?.AppId != null, osVersion = Environment.OSVersion.Version.ToString() }, new JsonSerializerOptions { WriteIndented = true }));
         ExitApp();
+    }
+    private bool TrayIconHasColor()
+    {
+        if (tray?.Icon == null) return false;
+        using var bitmap = tray.Icon.ToBitmap();
+        for (int y = 0; y < bitmap.Height; y++)
+            for (int x = 0; x < bitmap.Width; x++)
+            {
+                var pixel = bitmap.GetPixel(x, y);
+                if (pixel.A > 128 && Math.Max(pixel.R, Math.Max(pixel.G, pixel.B)) -
+                    Math.Min(pixel.R, Math.Min(pixel.G, pixel.B)) > 32) return true;
+            }
+        return false;
     }
     public void ExitApp()
     {

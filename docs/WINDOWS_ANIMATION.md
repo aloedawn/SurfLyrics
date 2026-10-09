@@ -94,3 +94,17 @@ LRCLIB lines with Spotify paused. Previous native menu/save smoke tests passed,
 but the last tray recheck could not move the cursor. An attempted coordinate
 message probe was rejected by automatic approval review because it could affect
 an unrelated window; it was not executed. No final tray input pass is claimed.
+
+## Display-on recheck, 2026-10-10
+
+Without changing production motion code, the full probe passed when the two
+actual Windows display-power notifications reported 1 (on). Growth/shrinkage,
+long and Japanese text transitions yielded 102–114 intermediate frames with
+6.94–6.96ms median moving-frame callback intervals. Equal-width text replacement,
+duplicate suppression, 120/250/400ms interruptions, full text/overlap, constant
+HWND, click-through, fade-off snapping and hide/restore also passed.
+
+This completes the display-on comparison with the preserved display-off failure.
+Windows/WPF suspension explains the test environment difference; no production
+frame-timing workaround was needed. Callback cadence remains distinct from
+measured physical presentation cadence.
