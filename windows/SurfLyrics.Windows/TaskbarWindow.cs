@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
+
 
 namespace SurfLyrics.Windows;
 
@@ -16,6 +16,7 @@ public sealed class TaskbarWindow : Window
     private readonly Canvas surface = new() { ClipToBounds = false, IsHitTestVisible = false };
     private readonly TranslateTransform position = new();
     private readonly LyricTextTransition transition;
+    private readonly SpringTextMotion motion;
     private readonly App host;
     private nint handle;
     private DateTimeOffset nextLayout;
@@ -43,9 +44,13 @@ public sealed class TaskbarWindow : Window
         text = new TextBlock { Text = "♫", Foreground = Brushes.White, FontFamily = LyricFont.Family, FontWeight = FontWeights.Light,
             TextTrimming = TextTrimming.None, TextWrapping = TextWrapping.NoWrap,
             RenderTransform = position, IsHitTestVisible = false };
+        var outgoing = new TextBlock { Opacity = 0, TextTrimming = TextTrimming.None, TextWrapping = TextWrapping.NoWrap, IsHitTestVisible = false };
+        surface.Children.Add(outgoing);
         surface.Children.Add(text);
+        motion = new(position);
+        Closed += (_, _) => motion.Dispose();
         Content = surface;
-        transition = new(text, () =>
+        transition = new(text, outgoing, () =>
         {
             UpdateFontSize();
             nextLayout = DateTimeOffset.UtcNow.AddMilliseconds(500);
@@ -115,7 +120,7 @@ public sealed class TaskbarWindow : Window
         // previous X, even when it temporarily overlaps notification icons.
         text.Width = double.NaN;
         text.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        double width = Math.Max(16, Math.Ceiling(text.DesiredSize.Width));
+        double width = Math.Max(16, text.DesiredSize.Width);
         text.Width = width;
         Canvas.SetTop(text, (height / scale - text.DesiredSize.Height) / 2);
         double target = (anchorRight - bounds.Left) / scale - 6 - width;
@@ -124,32 +129,23 @@ public sealed class TaskbarWindow : Window
             destination = target;
             FinishMotion();
         }
-        else if (Math.Abs(destination - target) > .01)
+        else if (destination != target)
         {
-            double from = position.X; // Includes the currently animated value after a seek.
             destination = target;
-            position.X = target;
-            var motion = new DoubleAnimation(from, target, new Duration(TimeSpan.FromMilliseconds(260)))
-            { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }, FillBehavior = FillBehavior.Stop };
-            AnimationCadence.Apply(motion);
-            position.BeginAnimation(TranslateTransform.XProperty, motion, HandoffBehavior.SnapshotAndReplace);
+            motion.MoveTo(target, animate: true);
         }
     }
 
     private void UpdateFontSize()
     {
-        // Keep the old line's metrics until the fade swaps the displayed text.
+        // The incoming line is measured immediately when its text changes.
         double size = text.Text == "♫" ? Math.Max(18, host.Settings.TaskbarFontSize) : host.Settings.TaskbarFontSize;
         if (text.FontSize == size) return;
         text.FontSize = size;
         nextLayout = default;
     }
 
-    private void FinishMotion()
-    {
-        position.BeginAnimation(TranslateTransform.XProperty, null);
-        position.X = destination;
-    }
+    private void FinishMotion() => motion.MoveTo(destination, animate: false);
 
     private void HideDisplay()
     {

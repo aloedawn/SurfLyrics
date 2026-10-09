@@ -105,6 +105,7 @@ Check("Paused playback does not extrapolate", paused.PositionNow == 1000);
 var playing = paused with { IsPlaying = true };
 Check("Playing playback extrapolates", playing.PositionNow >= 11_000 && playing.PositionNow < 12_000);
 Check("Playback clamps at duration", (playing with { PositionMs = 180_000 }).PositionNow == 180_000);
+SpringChecks.Run(Check);
 Console.WriteLine($"\n{passed} Windows regression checks passed.");
 
 sealed class FixtureProvider(LyricsResult result) : ILyricsProvider

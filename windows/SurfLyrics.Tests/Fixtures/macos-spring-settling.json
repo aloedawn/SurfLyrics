@@ -1,0 +1,447 @@
+{
+  "Source": "macOS 27.2 empirical model, 120Hz Retina 2x. Captured pixels/raw CSV are not included.",
+  "SourceSha256": "78d9b49777af098d34aa35bc54253e31e956a25c03ff3e437256dec13a2d499f",
+  "Cases": [
+    {
+      "run": "real",
+      "step": 1,
+      "amplitude_points": 232.00062101374905,
+      "component_stop_s": [
+        0.775,
+        0.8
+      ]
+    },
+    {
+      "run": "real",
+      "step": 2,
+      "amplitude_points": -129.00050429572488,
+      "component_stop_s": [
+        0.7416666666666667,
+        0.775
+      ]
+    },
+    {
+      "run": "real",
+      "step": 3,
+      "amplitude_points": 117.00008473583118,
+      "component_stop_s": [
+        0.7416666666666667,
+        0.775
+      ]
+    },
+    {
+      "run": "real",
+      "step": 4,
+      "amplitude_points": -108.00009562855476,
+      "component_stop_s": [
+        0.7333333333333333,
+        0.7666666666666666
+      ]
+    },
+    {
+      "run": "real",
+      "step": 5,
+      "amplitude_points": 86.00021546053503,
+      "component_stop_s": [
+        0.725,
+        0.7583333333333333
+      ]
+    },
+    {
+      "run": "real",
+      "step": 6,
+      "amplitude_points": -61.0003908423319,
+      "component_stop_s": [
+        0.4166666666666667,
+        0.7416666666666667
+      ]
+    },
+    {
+      "run": "real",
+      "step": 7,
+      "amplitude_points": 49.00014537560764,
+      "component_stop_s": [
+        0.4166666666666667,
+        0.7333333333333333
+      ]
+    },
+    {
+      "run": "real",
+      "step": 8,
+      "amplitude_points": -47.99985550081864,
+      "component_stop_s": [
+        0.4166666666666667,
+        0.7333333333333333
+      ]
+    },
+    {
+      "run": "real",
+      "step": 9,
+      "amplitude_points": 45.00024768537071,
+      "component_stop_s": [
+        0.4083333333333333,
+        0.725
+      ]
+    },
+    {
+      "run": "real",
+      "step": 10,
+      "amplitude_points": -37.00011836920425,
+      "component_stop_s": [
+        0.4083333333333333,
+        0.7166666666666667
+      ]
+    },
+    {
+      "run": "real",
+      "step": 11,
+      "amplitude_points": 37.00003814839343,
+      "component_stop_s": [
+        0.4083333333333333,
+        0.7166666666666667
+      ]
+    },
+    {
+      "run": "real",
+      "step": 12,
+      "amplitude_points": -44.999658399429734,
+      "component_stop_s": [
+        0.4083333333333333,
+        0.725
+      ]
+    },
+    {
+      "run": "real",
+      "step": 13,
+      "amplitude_points": 48.000128945114255,
+      "component_stop_s": [
+        0.4166666666666667,
+        0.7333333333333333
+      ]
+    },
+    {
+      "run": "real",
+      "step": 14,
+      "amplitude_points": -49.00011101305626,
+      "component_stop_s": [
+        0.4166666666666667,
+        0.7333333333333333
+      ]
+    },
+    {
+      "run": "real",
+      "step": 15,
+      "amplitude_points": 61.00061015892633,
+      "component_stop_s": [
+        0.4166666666666667,
+        0.7416666666666667
+      ]
+    },
+    {
+      "run": "real",
+      "step": 16,
+      "amplitude_points": -86.00017508408085,
+      "component_stop_s": [
+        0.725,
+        0.7583333333333333
+      ]
+    },
+    {
+      "run": "real",
+      "step": 17,
+      "amplitude_points": 108.00030189789857,
+      "component_stop_s": [
+        0.7333333333333333,
+        0.7666666666666666
+      ]
+    },
+    {
+      "run": "real",
+      "step": 18,
+      "amplitude_points": -117.00028039570574,
+      "component_stop_s": [
+        0.7416666666666667,
+        0.775
+      ]
+    },
+    {
+      "run": "real",
+      "step": 19,
+      "amplitude_points": 129.00000130678484,
+      "component_stop_s": [
+        0.7416666666666667,
+        0.775
+      ]
+    },
+    {
+      "run": "real",
+      "step": 21,
+      "amplitude_points": 243.00163712325264,
+      "component_stop_s": [
+        0.775,
+        0.8
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 0,
+      "amplitude_points": -60.00021243662927,
+      "component_stop_s": [
+        0.4166666666666667,
+        0.7416666666666667
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 1,
+      "amplitude_points": 60.00007584115693,
+      "component_stop_s": [
+        0.4166666666666667,
+        0.7416666666666667
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 2,
+      "amplitude_points": -40.999501999105505,
+      "component_stop_s": [
+        0.4083333333333333,
+        0.7166666666666667
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 3,
+      "amplitude_points": -64.00007694085784,
+      "component_stop_s": [
+        0.4166666666666667,
+        0.7416666666666667
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 4,
+      "amplitude_points": 64.00006052642424,
+      "component_stop_s": [
+        0.4166666666666667,
+        0.7416666666666667
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 6,
+      "amplitude_points": -64.99972768277686,
+      "component_stop_s": [
+        0.4166666666666667,
+        0.75
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 7,
+      "amplitude_points": 64.99986578587702,
+      "component_stop_s": [
+        0.4166666666666667,
+        0.75
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 8,
+      "amplitude_points": 18.000144909895173,
+      "component_stop_s": [
+        0.4,
+        0.4083333333333333
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 9,
+      "amplitude_points": -66.00021106419864,
+      "component_stop_s": [
+        0.7083333333333334,
+        0.75
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 10,
+      "amplitude_points": 66.00040999883288,
+      "component_stop_s": [
+        0.7083333333333334,
+        0.75
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 11,
+      "amplitude_points": 22.999783269255758,
+      "component_stop_s": [
+        0.4083333333333333,
+        0.4083333333333333
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 12,
+      "amplitude_points": -67.00020204639728,
+      "component_stop_s": [
+        0.7083333333333334,
+        0.75
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 13,
+      "amplitude_points": 66.99996165026951,
+      "component_stop_s": [
+        0.7083333333333334,
+        0.75
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 14,
+      "amplitude_points": -45.00022081037127,
+      "component_stop_s": [
+        0.4083333333333333,
+        0.725
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 15,
+      "amplitude_points": -70.00016137685579,
+      "component_stop_s": [
+        0.7083333333333334,
+        0.75
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 16,
+      "amplitude_points": 70.00023758725206,
+      "component_stop_s": [
+        0.7083333333333334,
+        0.75
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 17,
+      "amplitude_points": 19.000294453875853,
+      "component_stop_s": [
+        0.4,
+        0.4083333333333333
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 18,
+      "amplitude_points": -79.99988335186373,
+      "component_stop_s": [
+        0.7166666666666667,
+        0.7583333333333333
+      ]
+    },
+    {
+      "run": "boundary",
+      "step": 19,
+      "amplitude_points": 80.00054117808087,
+      "component_stop_s": [
+        0.7166666666666667,
+        0.7583333333333333
+      ]
+    },
+    {
+      "run": "holdout",
+      "step": 0,
+      "amplitude_points": -30.99979917230325,
+      "component_stop_s": [
+        0.4083333333333333,
+        0.4166666666666667
+      ]
+    },
+    {
+      "run": "holdout",
+      "step": 1,
+      "amplitude_points": 31.000075978966667,
+      "component_stop_s": [
+        0.4083333333333333,
+        0.4166666666666667
+      ]
+    },
+    {
+      "run": "holdout",
+      "step": 3,
+      "amplitude_points": -32.00002465274452,
+      "component_stop_s": [
+        0.4083333333333333,
+        0.4166666666666667
+      ]
+    },
+    {
+      "run": "holdout",
+      "step": 4,
+      "amplitude_points": 32.000487591447005,
+      "component_stop_s": [
+        0.4083333333333333,
+        0.4166666666666667
+      ]
+    },
+    {
+      "run": "holdout",
+      "step": 5,
+      "amplitude_points": -42.00050549303938,
+      "component_stop_s": [
+        0.4083333333333333,
+        0.725
+      ]
+    },
+    {
+      "run": "holdout",
+      "step": 6,
+      "amplitude_points": -33.00024011924558,
+      "component_stop_s": [
+        0.4083333333333333,
+        0.7083333333333334
+      ]
+    },
+    {
+      "run": "holdout",
+      "step": 7,
+      "amplitude_points": 33.00048820829493,
+      "component_stop_s": [
+        0.4083333333333333,
+        0.7083333333333334
+      ]
+    },
+    {
+      "run": "holdout",
+      "step": 8,
+      "amplitude_points": 57.00012627112835,
+      "component_stop_s": [
+        0.4166666666666667,
+        0.7416666666666667
+      ]
+    },
+    {
+      "run": "holdout",
+      "step": 9,
+      "amplitude_points": -34.000015898134905,
+      "component_stop_s": [
+        0.4083333333333333,
+        0.7083333333333334
+      ]
+    },
+    {
+      "run": "holdout",
+      "step": 10,
+      "amplitude_points": 34.0001655192658,
+      "component_stop_s": [
+        0.4083333333333333,
+        0.7083333333333334
+      ]
+    }
+  ]
+}

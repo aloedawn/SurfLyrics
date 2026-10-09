@@ -20,5 +20,6 @@ if ($LASTEXITCODE -ne 0) { throw 'WinUI settings publish failed.' }
 Copy-Item -LiteralPath (Join-Path $taskRepoRoot 'windows/SurfLyrics.Windows/Assets/Fonts/OFL.txt') -Destination (Join-Path $OutputDirectory 'Pretendard-JP-LICENSE.txt')
 Copy-Item -LiteralPath (Join-Path $taskRepoRoot 'LICENSE') -Destination (Join-Path $OutputDirectory 'LICENSE.txt')
 Copy-Item -LiteralPath (Join-Path $taskRepoRoot 'docs/WINDOWS.md') -Destination (Join-Path $OutputDirectory 'WINDOWS.md')
+Copy-Item -LiteralPath (Join-Path $taskRepoRoot 'docs/WINDOWS_ANIMATION.md') -Destination (Join-Path $OutputDirectory 'WINDOWS_ANIMATION.md')
 Get-FileHash -LiteralPath (Join-Path $OutputDirectory 'SurfLyrics.exe') -Algorithm SHA256
 if ($Run) { Start-Process -FilePath (Join-Path $OutputDirectory 'SurfLyrics.exe') }

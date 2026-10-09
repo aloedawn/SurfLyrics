@@ -5,4 +5,5 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../SurfLyrics.Windows/SurfLyrics.Windows.csproj" /></ItemGroup>
+  <ItemGroup><None Update="Fixtures/macos-spring-settling.json" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>
