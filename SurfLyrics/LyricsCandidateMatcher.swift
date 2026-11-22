@@ -30,6 +30,8 @@ struct LyricsCandidateMatcher: Sendable {
     private static let minimumArtistSimilarity = 0.45
     private static let minimumSingleTokenTitleSimilarity = 0.90
     private static let featureMarkers: Set<String> = ["feat", "ft", "featuring"]
+    private static let posixLocale = Locale(identifier: "en_US_POSIX")
+    private static let nonAlphanumerics = CharacterSet.alphanumerics.inverted
 
     private struct PreparedTrack {
         let editionTags: Set<EditionTag>
@@ -250,7 +252,7 @@ struct LyricsCandidateMatcher: Sendable {
 
     private static func normalizedTokens(_ text: String) -> [String] {
         let tokens = folded(text)
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .components(separatedBy: nonAlphanumerics)
             .filter { !$0.isEmpty }
         guard let markerIndex = tokens.firstIndex(where: featureMarkers.contains),
             markerIndex > 0
@@ -263,9 +265,9 @@ struct LyricsCandidateMatcher: Sendable {
     private static func folded(_ text: String) -> String {
         text.folding(
             options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
-            locale: Locale(identifier: "en_US_POSIX")
+            locale: posixLocale
         )
-        .lowercased(with: Locale(identifier: "en_US_POSIX"))
+        .lowercased(with: posixLocale)
     }
 
     private static func diceCoefficient(_ lhs: [String], _ rhs: [String]) -> Double {
@@ -284,24 +286,44 @@ struct LyricsCandidateMatcher: Sendable {
         let left = Array(lhs)
         let right = Array(rhs)
         guard !left.isEmpty, !right.isEmpty else { return left == right ? 1 : 0 }
+        if left == right { return 1 }
 
-        var previous = Array(0...right.count)
-        var current = Array(repeating: 0, count: right.count + 1)
-        for (leftIndex, leftCharacter) in left.enumerated() {
-            current[0] = leftIndex + 1
-            for (rightIndex, rightCharacter) in right.enumerated() {
+        let longestLength = max(left.count, right.count)
+        var prefix = 0
+        let minCount = min(left.count, right.count)
+        while prefix < minCount && left[prefix] == right[prefix] {
+            prefix += 1
+        }
+        var leftEnd = left.count
+        var rightEnd = right.count
+        while leftEnd > prefix && rightEnd > prefix && left[leftEnd - 1] == right[rightEnd - 1] {
+            leftEnd -= 1
+            rightEnd -= 1
+        }
+
+        let leftSlice = left[prefix..<leftEnd]
+        let rightSlice = right[prefix..<rightEnd]
+        if leftSlice.isEmpty || rightSlice.isEmpty {
+            let distance = max(leftSlice.count, rightSlice.count)
+            return 1.0 - Double(distance) / Double(longestLength)
+        }
+
+        var previous = Array(0...rightSlice.count)
+        var current = Array(repeating: 0, count: rightSlice.count + 1)
+        for (leftOffset, leftCharacter) in leftSlice.enumerated() {
+            current[0] = leftOffset + 1
+            for (rightOffset, rightCharacter) in rightSlice.enumerated() {
                 let substitutionCost = leftCharacter == rightCharacter ? 0 : 1
-                current[rightIndex + 1] = min(
-                    current[rightIndex] + 1,
-                    previous[rightIndex + 1] + 1,
-                    previous[rightIndex] + substitutionCost
+                current[rightOffset + 1] = min(
+                    current[rightOffset] + 1,
+                    previous[rightOffset + 1] + 1,
+                    previous[rightOffset] + substitutionCost
                 )
             }
             swap(&previous, &current)
         }
 
-        let longestLength = max(left.count, right.count)
-        return 1.0 - Double(previous[right.count]) / Double(longestLength)
+        return 1.0 - Double(previous[rightSlice.count]) / Double(longestLength)
     }
 
     private enum EditionTag: Hashable {
@@ -328,7 +350,7 @@ struct LyricsCandidateMatcher: Sendable {
         }
 
         var fullTokens = text
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .components(separatedBy: nonAlphanumerics)
             .filter { !$0.isEmpty }
         if let featureIndex = fullTokens.firstIndex(where: featureMarkers.contains) {
             fullTokens = Array(fullTokens[..<featureIndex])
@@ -339,7 +361,7 @@ struct LyricsCandidateMatcher: Sendable {
 
         return qualifierSegments.reduce(into: Set<EditionTag>()) { tags, segment in
             let tokens = segment
-                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .components(separatedBy: nonAlphanumerics)
                 .filter { !$0.isEmpty }
             let tokenSet = Set(tokens)
 
@@ -370,21 +392,24 @@ struct LyricsCandidateMatcher: Sendable {
     }
 
     private static func bracketedSegments(in text: String) -> [String] {
-        let openingBrackets: Set<Character> = ["(", "[", "{"]
-        let closingBrackets: Set<Character> = [")", "]", "}"]
         var segments: [String] = []
         var segment = ""
         var depth = 0
 
         for character in text {
-            if openingBrackets.contains(character) {
+            switch character {
+            case "(", "[", "{":
                 if depth == 0 { segment = "" }
                 depth += 1
-            } else if closingBrackets.contains(character), depth > 0 {
-                depth -= 1
-                if depth == 0 { segments.append(segment) }
-            } else if depth > 0 {
-                segment.append(character)
+            case ")", "]", "}":
+                if depth > 0 {
+                    depth -= 1
+                    if depth == 0 { segments.append(segment) }
+                }
+            default:
+                if depth > 0 {
+                    segment.append(character)
+                }
             }
         }
         return segments

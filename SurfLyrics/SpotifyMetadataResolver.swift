@@ -180,16 +180,20 @@ final class SpotifyMetadataResolver {
         )
     }
 
+    private nonisolated static let nextDataStartMarker = Data(
+        #"<script id="__NEXT_DATA__" type="application/json">"#.utf8
+    )
+    private nonisolated static let nextDataEndMarker = Data("</script>".utf8)
+
     nonisolated static func nextPayload(in data: Data) -> Data? {
-        guard let html = String(data: data, encoding: .utf8),
-            let markerRange = html.range(of: #"<script id="__NEXT_DATA__" type="application/json">"#),
-            let endRange = html.range(
-                of: "</script>",
-                range: markerRange.upperBound..<html.endIndex
+        guard let markerRange = data.range(of: nextDataStartMarker),
+            let endRange = data.range(
+                of: nextDataEndMarker,
+                in: markerRange.upperBound..<data.endIndex
             )
         else {
             return nil
         }
-        return String(html[markerRange.upperBound..<endRange.lowerBound]).data(using: .utf8)
+        return data.subdata(in: markerRange.upperBound..<endRange.lowerBound)
     }
 }

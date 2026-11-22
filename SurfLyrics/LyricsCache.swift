@@ -133,6 +133,23 @@ final class LyricsCache {
         return result
     }
 
+    func invalidate(for track: MusicTrack) {
+        for provider in LyricsProvider.allCases {
+            let key = LyricsCacheKey(provider: provider, track: track)
+            positiveEntries[key.positiveKey] = nil
+            positiveGenerations[key.positiveKey] = nil
+            if let sourceTrackID = key.sourceTrackID {
+                negativeEntries = negativeEntries.filter { candidateKey, _ in
+                    !(candidateKey.provider == provider
+                        && candidateKey.source == key.source
+                        && candidateKey.sourceTrackID == sourceTrackID)
+                }
+            } else {
+                negativeEntries[key] = nil
+            }
+        }
+    }
+
     private func value(
         from task: Task<LyricsFetchResult, Never>,
         for key: LyricsCacheKey,

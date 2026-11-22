@@ -28,6 +28,8 @@ struct SpotifyClientTarget: Decodable, Sendable {
 enum SpotifyClientEndpoint {
     static let port = 43827
     static let targetListURL = URL(string: "http://127.0.0.1:\(port)/json/list")!
+    static let sharedSession = makeSession()
+    private static let decoder = JSONDecoder()
 
     static func makeSession() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
@@ -39,10 +41,10 @@ enum SpotifyClientEndpoint {
         return URLSession(configuration: configuration, delegate: LocalOnlySessionDelegate(), delegateQueue: nil)
     }
 
-    static func debuggerURL(using session: URLSession) async throws -> URL {
+    static func debuggerURL(using session: URLSession = sharedSession) async throws -> URL {
         let (data, response) = try await session.data(from: targetListURL)
         guard (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 1_000_000,
-            let targets = try? JSONDecoder().decode([SpotifyClientTarget].self, from: data),
+            let targets = try? decoder.decode([SpotifyClientTarget].self, from: data),
             let socketURL = targets.compactMap(\.validatedWebSocketURL).first
         else { throw SpotifyClientBridgeError.unavailable }
         return socketURL

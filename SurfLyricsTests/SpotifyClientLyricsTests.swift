@@ -135,6 +135,42 @@ final class SpotifyClientLyricsTests: XCTestCase {
     }
 
     @MainActor
+    func testConfirmedClientResultIsCachedAndInvalidatable() async {
+        let suite = "SpotifyClientLyricsTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: AppPreferenceKey.lyricsSourceSpotifyClient)
+        defaults.set(false, forKey: AppPreferenceKey.lyricsSourceLRCLIB)
+        defaults.set(false, forKey: AppPreferenceKey.lyricsSourceMusixmatch)
+        let firstLyrics = Lyrics(lines: [LyricsLine(timeMs: 10, text: "Cached line")])
+        let refreshedLyrics = Lyrics(lines: [LyricsLine(timeMs: 10, text: "Refreshed line")])
+        let provider = StubClient(results: [.notFound, .found(firstLyrics), .found(refreshedLyrics)])
+        let service = LyricsService(preferences: AppPreferences(defaults: defaults), spotifyClient: provider)
+        let testTrack = track()
+
+        let miss = await service.getLyrics(for: testTrack)
+        let cachedMiss = await service.getLyrics(for: testTrack)
+        XCTAssertNil(miss.0)
+        XCTAssertNil(cachedMiss.0)
+        var count = await provider.requestCount
+        XCTAssertEqual(count, 1)
+
+        service.invalidateCache(for: testTrack)
+        let hit = await service.getLyrics(for: testTrack)
+        let cachedHit = await service.getLyrics(for: testTrack)
+        XCTAssertEqual(hit.0, firstLyrics)
+        XCTAssertEqual(cachedHit.0, firstLyrics)
+        count = await provider.requestCount
+        XCTAssertEqual(count, 2)
+
+        service.invalidateCache(for: testTrack)
+        let reloaded = await service.getLyrics(for: testTrack)
+        XCTAssertEqual(reloaded.0, refreshedLyrics)
+        count = await provider.requestCount
+        XCTAssertEqual(count, 3)
+    }
+
+    @MainActor
     func testDisabledClientProviderIsNotCalled() async {
         let suite = "SpotifyClientLyricsTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

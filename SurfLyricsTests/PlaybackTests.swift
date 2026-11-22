@@ -1,32 +1,172 @@
 import AppKit
+import CoreServices
 import XCTest
 @testable import SurfLyrics
 
 @MainActor
 final class PlaybackTests: XCTestCase {
-    func testInstalledPlayerAppleScriptsCompile() async {
-        let installedPlayers = MusicPlayer.allCases.filter { player in
-            NSWorkspace.shared.urlForApplication(
-            withBundleIdentifier: player.bundleIdentifier
-            ) != nil
-        }
-        XCTAssertFalse(installedPlayers.isEmpty)
+    func testAppleEventClientEncodesFourCharCodesAndDecodesReplyErrors() {
+        XCTAssertEqual(AppleEventClient.fourCharCode("getd"), OSType(kAEGetData))
+        XCTAssertEqual(AppleEventClient.fourCharCode("setd"), OSType(kAESetData))
+        XCTAssertNotNil(AppleEventClient.propertySpecifier(property: AppleEventClient.playerStateProperty))
 
-        let failures = await Task.detached {
-            installedPlayers.compactMap { player -> String? in
-                guard let script = NSAppleScript(
-                    source: AppleScriptPlayerProbe.currentTrackScript(for: player)
-                ) else {
-                    return "Could not create \(player.displayName) AppleScript"
-                }
-                var errorInfo: NSDictionary?
-                guard script.compileAndReturnError(&errorInfo) else {
-                    return "\(player.displayName) AppleScript failed to compile: \(String(describing: errorInfo))"
-                }
-                return nil
-            }
-        }.value
-        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+        let successReply = NSAppleEventDescriptor.appleEvent(
+            withEventClass: AEEventClass(kCoreEventClass),
+            eventID: AEEventID(kAEAnswer),
+            targetDescriptor: .null(),
+            returnID: AEReturnID(kAutoGenerateReturnID),
+            transactionID: AETransactionID(kAnyTransactionID)
+        )
+        successReply.setDescriptor(NSAppleEventDescriptor(string: "Track"), forKeyword: AEKeyword(keyDirectObject))
+        if case let .success(descriptor) = AppleEventClient.decodeReply(successReply) {
+            XCTAssertEqual(descriptor.stringValue, "Track")
+        } else {
+            XCTFail("Expected success reply")
+        }
+
+        let deniedReply = NSAppleEventDescriptor.appleEvent(
+            withEventClass: AEEventClass(kCoreEventClass),
+            eventID: AEEventID(kAEAnswer),
+            targetDescriptor: .null(),
+            returnID: AEReturnID(kAutoGenerateReturnID),
+            transactionID: AETransactionID(kAnyTransactionID)
+        )
+        deniedReply.setDescriptor(NSAppleEventDescriptor(int32: -1743), forKeyword: AEKeyword(keyErrorNumber))
+        XCTAssertEqual(
+            AppleEventClient.decodeReply(deniedReply),
+            .failure(.permissionDenied(-1743))
+        )
+
+        let missingReply = NSAppleEventDescriptor.appleEvent(
+            withEventClass: AEEventClass(kCoreEventClass),
+            eventID: AEEventID(kAEAnswer),
+            targetDescriptor: .null(),
+            returnID: AEReturnID(kAutoGenerateReturnID),
+            transactionID: AETransactionID(kAnyTransactionID)
+        )
+        missingReply.setDescriptor(NSAppleEventDescriptor(int32: -1728), forKeyword: AEKeyword(keyErrorNumber))
+        XCTAssertEqual(
+            AppleEventClient.decodeReply(missingReply),
+            .failure(.targetUnavailable(-1728))
+        )
+    }
+
+    func testAppleEventProbeWorkerUsesFastPathCacheAndInvalidatesOnChangeOrStop() async {
+        let sender = FakeAppleEventSender()
+        sender.appReplies[AppleEventClient.playerStateProperty] = .success(
+            NSAppleEventDescriptor(enumCode: AppleEventClient.playingEnum)
+        )
+        sender.appReplies[AppleEventClient.playerPositionProperty] = .success(
+            NSAppleEventDescriptor(double: 12.5)
+        )
+        sender.trackReplies[AppleEventClient.trackIDProperty] = .success(
+            NSAppleEventDescriptor(string: "spotify:track:AbC123xYz")
+        )
+        sender.trackReplies[AppleEventClient.trackNameProperty] = .success(
+            NSAppleEventDescriptor(string: "Track One")
+        )
+        sender.trackReplies[AppleEventClient.trackArtistProperty] = .success(
+            NSAppleEventDescriptor(string: "Artist One")
+        )
+        sender.trackReplies[AppleEventClient.trackAlbumProperty] = .success(
+            NSAppleEventDescriptor(string: "Album One")
+        )
+        sender.trackReplies[AppleEventClient.trackDurationProperty] = .success(
+            NSAppleEventDescriptor(int32: 180_000)
+        )
+        sender.trackReplies[AppleEventClient.spotifyURLProperty] = .success(
+            NSAppleEventDescriptor(string: "https://open.spotify.com/track/AbC123xYz")
+        )
+
+        let worker = AppleEventProbeWorker(sender: sender)
+
+        let first = await worker.probe(player: .spotify, pid: 100, forceFullMetadata: true)
+        guard case let .track(firstTrack) = first else { return XCTFail("Expected track") }
+        XCTAssertEqual(firstTrack.name, "Track One")
+        XCTAssertEqual(firstTrack.progressMs, 12_500)
+        XCTAssertEqual(sender.recordedProperties.count, 8)
+
+        sender.recordedProperties.removeAll()
+        sender.appReplies[AppleEventClient.playerPositionProperty] = .success(
+            NSAppleEventDescriptor(double: 20.0)
+        )
+        let fast = await worker.probe(player: .spotify, pid: 100, forceFullMetadata: false)
+        guard case let .track(fastTrack) = fast else { return XCTFail("Expected fast-path track") }
+        XCTAssertEqual(fastTrack.name, "Track One")
+        XCTAssertEqual(fastTrack.progressMs, 20_000)
+        XCTAssertEqual(sender.recordedProperties, [
+            AppleEventClient.playerStateProperty,
+            AppleEventClient.playerPositionProperty,
+            AppleEventClient.trackIDProperty,
+        ])
+
+        sender.recordedProperties.removeAll()
+        sender.trackReplies[AppleEventClient.trackIDProperty] = .success(
+            NSAppleEventDescriptor(string: "spotify:track:ZyX987AbC")
+        )
+        sender.trackReplies[AppleEventClient.spotifyURLProperty] = .success(
+            NSAppleEventDescriptor(string: "")
+        )
+        sender.trackReplies[AppleEventClient.trackNameProperty] = .success(
+            NSAppleEventDescriptor(string: "Track Two")
+        )
+        let changed = await worker.probe(player: .spotify, pid: 100, forceFullMetadata: false)
+        guard case let .track(changedTrack) = changed else { return XCTFail("Expected changed track") }
+        XCTAssertEqual(changedTrack.name, "Track Two")
+        XCTAssertEqual(changedTrack.sourceTrackID, "ZyX987AbC")
+        XCTAssertEqual(sender.recordedProperties.count, 8)
+
+        sender.appReplies[AppleEventClient.playerStateProperty] = .success(
+            NSAppleEventDescriptor(enumCode: AppleEventClient.stoppedEnum)
+        )
+        let stopped = await worker.probe(player: .spotify, pid: 100, forceFullMetadata: false)
+        guard case .inactive = stopped else { return XCTFail("Expected inactive when stopped") }
+
+        sender.recordedProperties.removeAll()
+        sender.appReplies[AppleEventClient.playerStateProperty] = .success(
+            NSAppleEventDescriptor(enumCode: AppleEventClient.playingEnum)
+        )
+        let afterStop = await worker.probe(player: .spotify, pid: 100, forceFullMetadata: false)
+        guard case .track = afterStop else { return XCTFail("Expected full probe after stop invalidates cache") }
+        XCTAssertEqual(sender.recordedProperties.count, 8)
+    }
+
+    func testAppleEventProbeWorkerMapsErrorsAndAppleMusicUnits() async {
+        let sender = FakeAppleEventSender()
+        sender.appReplies[AppleEventClient.playerStateProperty] = .failure(.permissionDenied(-1743))
+        let worker = AppleEventProbeWorker(sender: sender)
+
+        let denied = await worker.probe(player: .appleMusic, pid: 200, forceFullMetadata: true)
+        guard case .permissionDenied = denied else { return XCTFail("Expected permissionDenied") }
+
+        sender.appReplies[AppleEventClient.playerStateProperty] = .success(
+            NSAppleEventDescriptor(enumCode: AppleEventClient.pausedEnum)
+        )
+        sender.appReplies[AppleEventClient.playerPositionProperty] = .success(
+            NSAppleEventDescriptor(double: 12.5)
+        )
+        sender.trackReplies[AppleEventClient.persistentIDProperty] = .success(
+            NSAppleEventDescriptor(string: "HEX1234")
+        )
+        sender.trackReplies[AppleEventClient.trackNameProperty] = .success(
+            NSAppleEventDescriptor(string: "Apple Track")
+        )
+        sender.trackReplies[AppleEventClient.trackArtistProperty] = .success(
+            NSAppleEventDescriptor(string: "Apple Artist")
+        )
+        sender.trackReplies[AppleEventClient.trackAlbumProperty] = .success(
+            NSAppleEventDescriptor(string: "Apple Album")
+        )
+        sender.trackReplies[AppleEventClient.trackDurationProperty] = .success(
+            NSAppleEventDescriptor(double: 180.5)
+        )
+
+        let appleResult = await worker.probe(player: .appleMusic, pid: 200, forceFullMetadata: true)
+        guard case let .track(appleTrack) = appleResult else { return XCTFail("Expected Apple Music track") }
+        XCTAssertNil(appleTrack.sourceTrackID)
+        XCTAssertEqual(appleTrack.durationMs, 180_500)
+        XCTAssertEqual(appleTrack.progressMs, 12_500)
+        XCTAssertFalse(appleTrack.isPlaying)
     }
 
     func testTrackIdentityPrefersStableSourceIDOverLocalizedMetadata() {
@@ -81,59 +221,40 @@ final class PlaybackTests: XCTestCase {
         )
     }
 
-    func testSpotifyTrackResponseNormalizesTrackURIWithoutChangingIDCase() throws {
-        let response = makeProbeResponse(
-            name: "현지화된 제목",
-            artist: "현지화된 가수",
+    func testSpotifyTrackIdentityNormalizesTrackURIWithoutChangingIDCase() {
+        let identity = SpotifyTrackIdentityParser.parse(
             rawID: "spotify:track:AbC123xYz",
             rawURL: ""
         )
 
-        let track = try AppleScriptTrackResponseParser.parse(response, player: .spotify)
-
-        XCTAssertEqual(track.sourceTrackID, "AbC123xYz")
-        XCTAssertEqual(track.name, "현지화된 제목")
-        XCTAssertEqual(track.artist, "현지화된 가수")
-        XCTAssertEqual(track.durationMs, 180_000)
-        XCTAssertEqual(track.progressMs, 12_500)
+        XCTAssertEqual(identity.trackID, "AbC123xYz")
+        XCTAssertEqual(identity.itemKind, .track)
     }
 
-    func testSpotifyTrackResponseFallsBackToTrackURLAndRejectsNonTrackIdentifiers() throws {
-        let trackURLResponse = makeProbeResponse(
+    func testSpotifyTrackIdentityFallsBackToTrackURLAndRejectsNonTrackIdentifiers() {
+        let track = SpotifyTrackIdentityParser.parse(
             rawID: "ZyX987AbC",
             rawURL: "https://open.spotify.com/intl-ko/track/ZyX987AbC?si=share"
         )
-        let episodeResponse = makeProbeResponse(
+        let episode = SpotifyTrackIdentityParser.parse(
             rawID: "spotify:episode:Episode123",
             rawURL: "https://open.spotify.com/episode/Episode123"
         )
 
-        let track = try AppleScriptTrackResponseParser.parse(trackURLResponse, player: .spotify)
-        let episode = try AppleScriptTrackResponseParser.parse(episodeResponse, player: .spotify)
-
-        XCTAssertEqual(track.sourceTrackID, "ZyX987AbC")
+        XCTAssertEqual(track.trackID, "ZyX987AbC")
         XCTAssertEqual(track.itemKind, .track)
-        XCTAssertNil(episode.sourceTrackID)
+        XCTAssertNil(episode.trackID)
         XCTAssertEqual(episode.itemKind, .episode)
     }
 
-    func testSpotifyTrackResponseClassifiesLocalTracksAndAdvertisements() throws {
-        let localResponse = makeProbeResponse(
+    func testSpotifyTrackIdentityClassifiesLocalTracksAndAdvertisements() {
+        let localTrack = SpotifyTrackIdentityParser.parse(
             rawID: "spotify:local:Artist:Album:Track:180",
             rawURL: "spotify:local:Artist:Album:Track:180"
         )
-        let advertisementResponse = makeProbeResponse(
+        let advertisement = SpotifyTrackIdentityParser.parse(
             rawID: "spotify:ad:Advertisement123",
             rawURL: ""
-        )
-
-        let localTrack = try AppleScriptTrackResponseParser.parse(
-            localResponse,
-            player: .spotify
-        )
-        let advertisement = try AppleScriptTrackResponseParser.parse(
-            advertisementResponse,
-            player: .spotify
         )
 
         XCTAssertEqual(localTrack.itemKind, .localTrack)
@@ -142,122 +263,50 @@ final class PlaybackTests: XCTestCase {
         XCTAssertFalse(advertisement.itemKind.supportsLyricsLookup)
     }
 
-    func testSpotifyTrackResponseRejectsMalformedOrConflictingLocalTracks() throws {
-        let malformed = makeProbeResponse(
+    func testSpotifyTrackIdentityRejectsMalformedOrConflictingLocalTracks() {
+        let malformedTrack = SpotifyTrackIdentityParser.parse(
             rawID: "spotify:local:Artist:Album",
             rawURL: ""
         )
-        let conflicting = makeProbeResponse(
+        let conflictingTrack = SpotifyTrackIdentityParser.parse(
             rawID: "spotify:local:Artist:Album:Track:180",
             rawURL: "spotify:local:Artist:Album:Other:180"
-        )
-
-        let malformedTrack = try AppleScriptTrackResponseParser.parse(
-            malformed,
-            player: .spotify
-        )
-        let conflictingTrack = try AppleScriptTrackResponseParser.parse(
-            conflicting,
-            player: .spotify
         )
 
         XCTAssertFalse(malformedTrack.itemKind.supportsLyricsLookup)
         XCTAssertFalse(conflictingTrack.itemKind.supportsLyricsLookup)
     }
 
-    func testSpotifyTrackResponseRejectsBareIDAndConflictingTypedIdentities() throws {
-        let bareIDResponse = makeProbeResponse(
-            rawID: "UnTypedBareID123",
-            rawURL: ""
-        )
-        let conflictingTypeResponse = makeProbeResponse(
+    func testSpotifyTrackIdentityRejectsBareIDAndConflictingTypedIdentities() {
+        let bareID = SpotifyTrackIdentityParser.parse(rawID: "UnTypedBareID123", rawURL: "")
+        let conflictingType = SpotifyTrackIdentityParser.parse(
             rawID: "spotify:track:Track123",
             rawURL: "spotify:episode:Episode123"
         )
-        let conflictingTrackResponse = makeProbeResponse(
+        let conflictingTrack = SpotifyTrackIdentityParser.parse(
             rawID: "spotify:track:Track123",
             rawURL: "https://open.spotify.com/track/OtherTrack456"
         )
-        let conflictingBareResponse = makeProbeResponse(
+        let conflictingBare = SpotifyTrackIdentityParser.parse(
             rawID: "Track123",
             rawURL: "https://open.spotify.com/track/OtherTrack456"
         )
-        let bareEpisodeResponse = makeProbeResponse(
+        let bareEpisode = SpotifyTrackIdentityParser.parse(
             rawID: "0zLhl3WsOCQHbe1BPTiHgr",
             rawURL: "spotify:episode:0zLhl3WsOCQHbe1BPTiHgr"
         )
-        let nestedTrackPathResponse = makeProbeResponse(
+        let nestedTrackPath = SpotifyTrackIdentityParser.parse(
             rawID: "",
             rawURL: "https://open.spotify.com/embed/track/Track123"
         )
 
-        XCTAssertNil(
-            try AppleScriptTrackResponseParser.parse(bareIDResponse, player: .spotify)
-                .sourceTrackID
-        )
-        XCTAssertFalse(
-            try AppleScriptTrackResponseParser.parse(bareIDResponse, player: .spotify)
-                .itemKind.supportsLyricsLookup
-        )
-        XCTAssertNil(
-            try AppleScriptTrackResponseParser.parse(
-                conflictingTypeResponse,
-                player: .spotify
-            ).sourceTrackID
-        )
-        XCTAssertNil(
-            try AppleScriptTrackResponseParser.parse(
-                conflictingTrackResponse,
-                player: .spotify
-            ).sourceTrackID
-        )
-        XCTAssertNil(
-            try AppleScriptTrackResponseParser.parse(
-                conflictingBareResponse,
-                player: .spotify
-            ).sourceTrackID
-        )
-        XCTAssertNil(
-            try AppleScriptTrackResponseParser.parse(
-                bareEpisodeResponse,
-                player: .spotify
-            ).sourceTrackID
-        )
-        XCTAssertNil(
-            try AppleScriptTrackResponseParser.parse(
-                nestedTrackPathResponse,
-                player: .spotify
-            ).sourceTrackID
-        )
-    }
-
-    func testAppleMusicTrackResponseAcceptsEmptyIdentityFields() throws {
-        let response = makeProbeResponse(
-            duration: "180.5",
-            rawID: "",
-            rawURL: ""
-        )
-
-        let track = try AppleScriptTrackResponseParser.parse(response, player: .appleMusic)
-
-        XCTAssertNil(track.sourceTrackID)
-        XCTAssertEqual(track.durationMs, 180_500)
-        XCTAssertEqual(track.progressMs, 12_500)
-    }
-
-    func testTrackResponseParserReportsUnexpectedFieldCount() {
-        let response = ["playing", "Track"].joined(
-            separator: AppleScriptTrackResponseParser.separator
-        )
-
-        XCTAssertThrowsError(
-            try AppleScriptTrackResponseParser.parse(response, player: .spotify)
-        ) { error in
-            XCTAssertEqual(
-                error as? AppleScriptTrackResponseParser.ParseError,
-                AppleScriptTrackResponseParser.ParseError(actualFieldCount: 2)
-            )
-        }
+        XCTAssertNil(bareID.trackID)
+        XCTAssertFalse(bareID.itemKind.supportsLyricsLookup)
+        XCTAssertNil(conflictingType.trackID)
+        XCTAssertNil(conflictingTrack.trackID)
+        XCTAssertNil(conflictingBare.trackID)
+        XCTAssertNil(bareEpisode.trackID)
+        XCTAssertNil(nestedTrackPath.trackID)
     }
 
     func testPreferredPlayingPlayerShortCircuitsOtherProbe() async {
@@ -321,12 +370,12 @@ final class PlaybackTests: XCTestCase {
         state.requestPlaybackRefresh(preferredPlayer: .appleMusic)
         XCTAssertEqual(manager.playbackCallCount, 1)
 
-        manager.resolveNextPlayback(with: .init(track: nil, issue: .unavailable("idle")))
+        manager.resolveNextPlayback(with: .init(track: nil, issue: .noRunningPlayers))
         let trailingRefreshStarted = await eventually { manager.playbackCallCount == 2 }
         XCTAssertTrue(trailingRefreshStarted)
         XCTAssertEqual(manager.preferredPlayers, [nil, .appleMusic])
 
-        manager.resolveNextPlayback(with: .init(track: nil, issue: .unavailable("idle")))
+        manager.resolveNextPlayback(with: .init(track: nil, issue: .noRunningPlayers))
         let trailingRefreshFinished = await eventually { manager.pendingPlaybackCount == 0 }
         XCTAssertTrue(trailingRefreshFinished)
         XCTAssertEqual(manager.playbackCallCount, 2)
@@ -340,7 +389,7 @@ final class PlaybackTests: XCTestCase {
 
         state.shutdown()
         state.requestPlaybackRefresh(preferredPlayer: .spotify)
-        manager.resolveNextPlayback(with: .init(track: nil, issue: .unavailable("idle")))
+        manager.resolveNextPlayback(with: .init(track: nil, issue: .noRunningPlayers))
         let refreshFinished = await eventually { manager.pendingPlaybackCount == 0 }
 
         XCTAssertTrue(refreshFinished)
@@ -369,7 +418,7 @@ final class PlaybackTests: XCTestCase {
         XCTAssertEqual(state.sourceText, "재생 앱: Apple Music")
     }
 
-    func testPausedTrackChangeAndSourceReloadResetLyricsWithoutResumingPlayback() async {
+    func testPausedTrackChangeAndSourceReloadInvalidateCacheAndKeepInactiveCadence() async {
         let manager = ControlledMusicManager()
         let state = AppState(musicManager: manager)
         defer { state.shutdown() }
@@ -398,6 +447,7 @@ final class PlaybackTests: XCTestCase {
 
         NotificationCenter.default.post(name: .settingsLyricsSourcesChanged, object: nil)
         _ = await eventually { manager.lyricsCallCount == 1 }
+        XCTAssertEqual(manager.invalidatedTracks.count, 1)
         XCTAssertEqual(state.statusText, "♫ Second — Artist")
         XCTAssertEqual(state.sourceText, "재생 앱: Spotify")
         manager.resolveLyrics(forTrackNamed: "Second", with: (
@@ -405,7 +455,8 @@ final class PlaybackTests: XCTestCase {
         ))
         _ = await eventually { state.statusText == "Reloaded line" }
         XCTAssertEqual(state.statusText, "Reloaded line")
-        XCTAssertEqual(state.scheduledRefreshInterval, 3)
+        XCTAssertEqual(state.scheduledSyncInterval, 15.0)
+        XCTAssertNil(state.scheduledLyricDate)
         XCTAssertEqual(manager.playbackCallCount, 2)
     }
 
@@ -442,7 +493,7 @@ final class PlaybackTests: XCTestCase {
         XCTAssertTrue(freshLyricsDisplayed)
     }
 
-    func testLyricsCompletionDoesNotPostponeExistingRefresh() async {
+    func testLyricsCompletionDoesNotPostponeExistingSyncRefresh() async {
         let manager = ControlledMusicManager()
         let state = AppState(musicManager: manager)
         defer { state.shutdown() }
@@ -453,8 +504,8 @@ final class PlaybackTests: XCTestCase {
             issue: nil
         ))
         _ = await eventually { manager.lyricsCallCount == 1 }
-        guard let originalRefreshDate = state.scheduledRefreshDate else {
-            return XCTFail("Expected the initial playback refresh to be scheduled")
+        guard let originalSyncDate = state.scheduledSyncDate else {
+            return XCTFail("Expected the initial sync timer to be scheduled")
         }
 
         manager.resolveLyrics(
@@ -467,12 +518,14 @@ final class PlaybackTests: XCTestCase {
 
         let lyricsDisplayed = await eventually { state.statusText == "Now" }
         XCTAssertTrue(lyricsDisplayed)
-        XCTAssertEqual(state.scheduledRefreshDate, originalRefreshDate)
+        XCTAssertEqual(state.scheduledSyncDate, originalSyncDate)
     }
 
-    func testScheduledLyricsDisplayDoesNotWaitForPlaybackRefresh() async {
+    func testScheduledLyricTimerAdvancesDisplayWithoutPlaybackIPC() async {
         let manager = ControlledMusicManager()
-        let state = AppState(musicManager: manager)
+        var now: TimeInterval = 100.0
+        let state = AppState(musicManager: manager, monotonicTime: { now })
+        defer { state.shutdown() }
 
         _ = await eventually { manager.playbackCallCount == 1 }
         manager.resolveNextPlayback(with: .init(
@@ -488,30 +541,51 @@ final class PlaybackTests: XCTestCase {
             ]), "Test")
         )
         _ = await eventually { state.statusText == "Now" }
+        XCTAssertEqual(state.scheduledLyricInterval ?? -1, 1.0, accuracy: 0.001)
 
-        state.fireScheduledRefreshForTesting()
+        now = 101.0
+        state.fireScheduledLyricUpdateForTesting()
 
         XCTAssertEqual(state.statusText, "Next")
-        let refreshStarted = await eventually {
-            manager.playbackCallCount == 2 && manager.pendingPlaybackCount == 1
-        }
-        XCTAssertTrue(refreshStarted)
-        XCTAssertEqual(state.statusText, "Next")
+        XCTAssertEqual(manager.playbackCallCount, 1)
+        XCTAssertNil(state.scheduledLyricDate)
 
+        state.fireScheduledSyncForTesting()
+        let syncStarted = await eventually { manager.playbackCallCount == 2 }
+        XCTAssertTrue(syncStarted)
+        XCTAssertEqual(manager.forceFullMetadataFlags, [true, false])
+    }
+
+    func testIntroSchedulesLyricTimerAndAccountsForFetchElapsedTime() async {
+        let manager = ControlledMusicManager()
+        var now: TimeInterval = 50.0
+        let state = AppState(musicManager: manager, monotonicTime: { now })
+        defer { state.shutdown() }
+
+        _ = await eventually { manager.playbackCallCount == 1 }
         manager.resolveNextPlayback(with: .init(
-            track: MusicTrack(
-                source: .spotify,
-                name: "Track",
-                artist: "Artist",
-                album: "Album",
-                durationMs: 180_000,
-                progressMs: 2_000,
-                isPlaying: true
-            ),
+            track: makeTrack(source: .spotify, isPlaying: true, progressMs: 500),
             issue: nil
         ))
-        _ = await eventually { manager.pendingPlaybackCount == 0 }
-        state.shutdown()
+        _ = await eventually { manager.lyricsCallCount == 1 }
+
+        now = 50.5
+        manager.resolveLyrics(
+            forTrackNamed: "Track",
+            with: (Lyrics(lines: [
+                LyricsLine(timeMs: 2_500, text: "First line"),
+            ]), "Test")
+        )
+
+        let scheduled = await eventually { state.scheduledLyricDate != nil }
+        XCTAssertTrue(scheduled)
+        XCTAssertEqual(state.statusText, "♫ Track — Artist")
+        XCTAssertEqual(state.scheduledLyricInterval ?? -1, 1.5, accuracy: 0.001)
+
+        now = 52.0
+        state.fireScheduledLyricUpdateForTesting()
+        XCTAssertEqual(state.statusText, "First line")
+        XCTAssertEqual(manager.playbackCallCount, 1)
     }
 
     func testLocalizedMissRetriesChangedMetadataForSameSourceID() async {
@@ -532,7 +606,7 @@ final class PlaybackTests: XCTestCase {
         ))
         _ = await eventually { manager.lyricsCallCount == 1 }
         manager.resolveLyrics(forTrackNamed: "현지화된 제목", with: (nil, nil))
-        _ = await eventually { state.scheduledRefreshInterval == 5.0 }
+        _ = await eventually { state.scheduledSyncInterval == 15.0 }
 
         state.requestPlaybackRefresh(preferredPlayer: .spotify)
         _ = await eventually { manager.playbackCallCount == 2 }
@@ -600,7 +674,7 @@ final class PlaybackTests: XCTestCase {
         XCTAssertEqual(manager.lyricsCallCount, 0)
     }
 
-    func testEpisodePlaybackDoesNotStartLyricsLookup() async {
+    func testEpisodePlaybackDoesNotStartLyricsLookupAndUsesSlowSyncCadence() async {
         let manager = ControlledMusicManager()
         let state = AppState(musicManager: manager)
         defer { state.shutdown() }
@@ -611,7 +685,8 @@ final class PlaybackTests: XCTestCase {
                 source: .spotify,
                 isPlaying: true,
                 itemKind: .episode,
-                name: "Podcast Episode"
+                name: "Podcast Episode",
+                durationMs: 1_800_000
             ),
             issue: nil
         ))
@@ -620,6 +695,9 @@ final class PlaybackTests: XCTestCase {
 
         XCTAssertTrue(playbackFinished)
         XCTAssertEqual(manager.lyricsCallCount, 0)
+        XCTAssertEqual(state.scheduledSyncInterval, 15.0)
+        XCTAssertEqual(state.scheduledSyncTolerance ?? -1, 2.0, accuracy: 0.001)
+        XCTAssertNil(state.scheduledLyricDate)
     }
 
     func testEpisodeTransitionCancelsPreviousTrackLyricsLookup() async {
@@ -663,7 +741,8 @@ final class PlaybackTests: XCTestCase {
         ))
         let displayed = await eventually { state.statusText == "Paused line" }
         XCTAssertTrue(displayed)
-        XCTAssertEqual(state.scheduledRefreshInterval, 3)
+        XCTAssertEqual(state.scheduledSyncInterval, 15.0)
+        XCTAssertNil(state.scheduledLyricDate)
     }
 
     func testInstrumentalGapUsesIdleIconAndSeekingRestoresLyrics() async {
@@ -679,7 +758,8 @@ final class PlaybackTests: XCTestCase {
         ]), "Spotify 클라이언트"))
         let gapDisplayed = await eventually { state.statusText == "" && state.sourceText?.contains("Spotify 클라이언트") == true }
         XCTAssertTrue(gapDisplayed)
-        XCTAssertEqual(state.scheduledRefreshInterval, 1)
+        XCTAssertEqual(state.scheduledLyricInterval ?? -1, 1.0, accuracy: 0.05)
+        XCTAssertEqual(state.scheduledSyncInterval, 5.0)
 
         state.requestPlaybackRefresh(preferredPlayer: .spotify)
         _ = await eventually { manager.playbackCallCount == 2 }
@@ -691,16 +771,28 @@ final class PlaybackTests: XCTestCase {
         XCTAssertEqual(state.sourceText, "재생 앱: Spotify\n가사 소스: Spotify 클라이언트")
     }
 
-    func testTimerReschedulesForIdleMissingLyricsAndUpcomingLine() async {
+    func testZeroWakeupIdleMissingLyricsSyncedLyricsAndEndOfTrackCadence() async {
+        let workspaceCenter = NotificationCenter()
         let idleManager = ControlledMusicManager()
-        let idleState = AppState(musicManager: idleManager)
+        let idleState = AppState(
+            musicManager: idleManager,
+            workspaceNotificationCenter: workspaceCenter
+        )
         _ = await eventually { idleManager.playbackCallCount == 1 }
-        idleManager.resolveNextPlayback(with: .init(track: nil, issue: .unavailable("idle")))
-        let idleScheduled = await eventually { idleState.scheduledRefreshInterval == 3.0 }
-        XCTAssertTrue(idleScheduled)
+        idleManager.resolveNextPlayback(with: .init(track: nil, issue: .noRunningPlayers))
+        let settled = await eventually { idleManager.pendingPlaybackCount == 0 }
+        XCTAssertTrue(settled)
         XCTAssertEqual(idleState.statusText, "")
-        XCTAssertEqual(idleState.scheduledRefreshInterval, 3.0)
-        XCTAssertEqual(idleState.scheduledRefreshTolerance ?? -1, 0, accuracy: 0.001)
+        XCTAssertNil(idleState.scheduledSyncDate)
+        XCTAssertNil(idleState.scheduledLyricDate)
+
+        workspaceCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+        let wakeRefreshed = await eventually { idleManager.playbackCallCount == 2 }
+        XCTAssertTrue(wakeRefreshed)
+        idleManager.resolveNextPlayback(with: .init(track: nil, issue: .unavailable("stopped")))
+        let stoppedScheduled = await eventually { idleState.scheduledSyncInterval == 15.0 }
+        XCTAssertTrue(stoppedScheduled)
+        XCTAssertEqual(idleState.scheduledSyncTolerance ?? -1, 5.0, accuracy: 0.001)
         idleState.shutdown()
 
         let missingManager = ControlledMusicManager()
@@ -712,9 +804,10 @@ final class PlaybackTests: XCTestCase {
         ))
         _ = await eventually { missingManager.lyricsCallCount == 1 }
         missingManager.resolveLyrics(forTrackNamed: "Track", with: (nil, nil))
-        let missingScheduled = await eventually { missingState.scheduledRefreshInterval == 5.0 }
+        let missingScheduled = await eventually { missingState.scheduledSyncInterval == 15.0 }
         XCTAssertTrue(missingScheduled)
-        XCTAssertEqual(missingState.scheduledRefreshTolerance ?? -1, 0, accuracy: 0.001)
+        XCTAssertEqual(missingState.scheduledSyncTolerance ?? -1, 2.0, accuracy: 0.001)
+        XCTAssertNil(missingState.scheduledLyricDate)
         missingState.shutdown()
 
         let syncedManager = ControlledMusicManager()
@@ -732,9 +825,10 @@ final class PlaybackTests: XCTestCase {
                 LyricsLine(timeMs: 1_500, text: "Next"),
             ]), "Test")
         )
-        let syncedScheduled = await eventually { syncedState.scheduledRefreshInterval == 0.5 }
-        XCTAssertTrue(syncedScheduled)
-        XCTAssertEqual(syncedState.scheduledRefreshTolerance ?? -1, 0, accuracy: 0.001)
+        let lyricScheduled = await eventually { syncedState.scheduledLyricInterval == 0.5 }
+        XCTAssertTrue(lyricScheduled)
+        XCTAssertEqual(syncedState.scheduledLyricTolerance ?? -1, 0.03, accuracy: 0.001)
+        XCTAssertEqual(syncedState.scheduledSyncInterval ?? -1, 5.0, accuracy: 0.001)
         syncedState.shutdown()
     }
 
@@ -755,7 +849,9 @@ final class PlaybackTests: XCTestCase {
         itemKind: PlaybackItemKind = .track,
         name: String = "Track",
         artist: String = "Artist",
-        album: String = "Album"
+        album: String = "Album",
+        durationMs: Int = 180_000,
+        progressMs: Int = 1_000
     ) -> MusicTrack {
         MusicTrack(
             source: source,
@@ -764,24 +860,37 @@ final class PlaybackTests: XCTestCase {
             name: name,
             artist: artist,
             album: album,
-            durationMs: 180_000,
-            progressMs: 1_000,
+            durationMs: durationMs,
+            progressMs: progressMs,
             isPlaying: isPlaying
         )
     }
+}
 
-    private func makeProbeResponse(
-        state: String = "playing",
-        name: String = "Track",
-        artist: String = "Artist",
-        album: String = "Album",
-        duration: String = "180000",
-        position: String = "12.5",
-        rawID: String,
-        rawURL: String
-    ) -> String {
-        [state, name, artist, album, duration, position, rawID, rawURL]
-            .joined(separator: AppleScriptTrackResponseParser.separator)
+private final class FakeAppleEventSender: AppleEventQuerySending, @unchecked Sendable {
+    var appReplies: [OSType: Result<NSAppleEventDescriptor, AppleEventError>] = [:]
+    var trackReplies: [OSType: Result<NSAppleEventDescriptor, AppleEventError>] = [:]
+    var currentTrackExistsResult: Result<Void, AppleEventError> = .success(())
+    var recordedProperties: [OSType] = []
+
+    func getApplicationProperty(
+        _ property: OSType,
+        pid: pid_t
+    ) -> Result<NSAppleEventDescriptor, AppleEventError> {
+        recordedProperties.append(property)
+        return appReplies[property] ?? .failure(.targetUnavailable(-1728))
+    }
+
+    func getTrackProperty(
+        _ property: OSType,
+        pid: pid_t
+    ) -> Result<NSAppleEventDescriptor, AppleEventError> {
+        recordedProperties.append(property)
+        return trackReplies[property] ?? .failure(.targetUnavailable(-1728))
+    }
+
+    func checkCurrentTrackExists(pid: pid_t) -> Result<Void, AppleEventError> {
+        currentTrackExistsResult
     }
 }
 
@@ -800,7 +909,7 @@ private final class StubPlayerProbe: MusicPlayerProbing {
         running
     }
 
-    func probe(_ player: MusicPlayer) async -> TrackProbeResult {
+    func probe(_ player: MusicPlayer, forceFullMetadata: Bool) async -> TrackProbeResult {
         calls.append(player)
         return results[player] ?? .inactive
     }
@@ -809,6 +918,9 @@ private final class StubPlayerProbe: MusicPlayerProbing {
 @MainActor
 private final class ControlledMusicManager: MusicManaging {
     private(set) var preferredPlayers: [MusicPlayer?] = []
+    private(set) var forceFullMetadataFlags: [Bool] = []
+    private(set) var invalidatedTracks: [MusicTrack] = []
+    private(set) var endpointInvalidationCount = 0
     private var playbackContinuations: [CheckedContinuation<MusicPlaybackResult, Never>] = []
     private var lyricsContinuations: [(
         track: MusicTrack,
@@ -819,8 +931,12 @@ private final class ControlledMusicManager: MusicManaging {
     var pendingPlaybackCount: Int { playbackContinuations.count }
     var lyricsCallCount: Int { lyricsContinuations.count }
 
-    func getCurrentTrack(preferredPlayer: MusicPlayer?) async -> MusicPlaybackResult {
+    func getCurrentTrack(
+        preferredPlayer: MusicPlayer?,
+        forceFullMetadata: Bool
+    ) async -> MusicPlaybackResult {
         preferredPlayers.append(preferredPlayer)
+        forceFullMetadataFlags.append(forceFullMetadata)
         return await withCheckedContinuation { continuation in
             playbackContinuations.append(continuation)
         }
@@ -841,6 +957,14 @@ private final class ControlledMusicManager: MusicManaging {
                 lyricsContinuations.remove(at: index).continuation.resume(returning: (nil, nil))
             }
         }
+    }
+
+    func invalidateLyricsCache(for track: MusicTrack) {
+        invalidatedTracks.append(track)
+    }
+
+    func invalidateSpotifyEndpoint() {
+        endpointInvalidationCount += 1
     }
 
     func resolveNextPlayback(with result: MusicPlaybackResult) {

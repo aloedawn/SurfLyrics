@@ -80,11 +80,6 @@ struct LyricsSettingsPane: View {
                 Text(connection.state.message)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if connection.state == .helperRequired {
-                    Text("SurfLyrics 연결 도우미를 응용 프로그램 폴더에 한 번 설치하면 이후 자동으로 연결됩니다.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
                 Text("연결 준비가 필요할 때 Spotify가 잠시 재시작됩니다. Spotify를 종료하면 로컬 연결도 닫힙니다.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

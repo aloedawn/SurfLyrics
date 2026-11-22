@@ -150,7 +150,8 @@ struct MusicPlaybackResult: Sendable {
     let issue: MusicPlaybackIssue?
 }
 
-enum MusicPlaybackIssue: Sendable {
+enum MusicPlaybackIssue: Equatable, Sendable {
+    case noRunningPlayers
     case permissionDenied(String)
     case unavailable(String)
 

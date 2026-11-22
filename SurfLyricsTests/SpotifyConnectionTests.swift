@@ -3,30 +3,27 @@ import XCTest
 
 @MainActor
 final class SpotifyConnectionTests: XCTestCase {
-    func testExistingConnectionNeverLaunchesHelperOrChangesPlayback() async {
+    func testExistingConnectionNeverRestartsSpotifyOrChangesPlayback() async {
         let environment = FakeConnectionEnvironment(ready: [true])
         let connection = makeConnection(environment)
         let ready = await connection.ensureReady(for: track())
         XCTAssertTrue(ready)
         XCTAssertEqual(connection.state, .connected)
-        XCTAssertEqual(environment.launches, 0)
+        XCTAssertEqual(environment.preparations, 0)
         XCTAssertEqual(environment.restoredTracks, [])
     }
 
-    func testMissingHelperDoesNotRestartSpotifyAndCanRecoverAfterInstallation() async {
-        let environment = FakeConnectionEnvironment(ready: [false, false, true])
-        environment.helperIsInstalled = false
+    func testSpotifyTerminationResetsConnectedState() async {
+        let environment = FakeConnectionEnvironment(ready: [false, true])
         let connection = makeConnection(environment)
-        let missing = await connection.ensureReady(for: track())
-        XCTAssertFalse(missing)
-        XCTAssertEqual(connection.state, .helperRequired)
-        XCTAssertEqual(environment.launches, 0)
+        let ready = await connection.ensureReady(for: track())
+        XCTAssertTrue(ready)
+        XCTAssertEqual(connection.state, .connected)
+        XCTAssertTrue(connection.isWarmingUp)
 
-        environment.helperIsInstalled = true
-        let connected = await connection.ensureReady(for: track())
-        XCTAssertTrue(connected)
-        XCTAssertEqual(environment.launches, 1)
-        XCTAssertEqual(environment.restoredTracks, [track()])
+        connection.handleSpotifyTerminated()
+        XCTAssertEqual(connection.state, .idle)
+        XCTAssertFalse(connection.isWarmingUp)
     }
 
     func testDisabledSourceAndClosedSpotifyDoNotLaunchApplications() async {
@@ -40,7 +37,7 @@ final class SpotifyConnectionTests: XCTestCase {
         let closedResult = await connection.ensureReady(for: track())
         XCTAssertFalse(closedResult)
         XCTAssertEqual(connection.state, .idle)
-        XCTAssertEqual(environment.launches, 0)
+        XCTAssertEqual(environment.preparations, 0)
     }
 
     func testFailedLaunchHasCooldownAndExplicitRetry() async {
@@ -50,10 +47,10 @@ final class SpotifyConnectionTests: XCTestCase {
         _ = await connection.ensureReady(for: track())
         _ = await connection.ensureReady(for: track())
         XCTAssertEqual(connection.state, .failed)
-        XCTAssertEqual(environment.launches, 1)
+        XCTAssertEqual(environment.preparations, 1)
         connection.retry()
         _ = await connection.ensureReady(for: track())
-        XCTAssertEqual(environment.launches, 2)
+        XCTAssertEqual(environment.preparations, 2)
     }
 
     func testConcurrentLookupsShareConnectionAndSurviveLookupCancellation() async {
@@ -71,15 +68,14 @@ final class SpotifyConnectionTests: XCTestCase {
         let secondResult = await second.value
         XCTAssertTrue(firstResult)
         XCTAssertTrue(secondResult)
-        XCTAssertEqual(environment.launches, 1)
+        XCTAssertEqual(environment.preparations, 1)
         XCTAssertEqual(opened, 1)
     }
 
     private func makeConnection(
         _ environment: FakeConnectionEnvironment, opened: @escaping () -> Void = {}
     ) -> SpotifyClientConnection {
-        SpotifyClientConnection(environment: environment, isEnabled: { true }, maximumPolls: 1,
-            sleep: {}, connectionDidOpen: opened)
+        SpotifyClientConnection(environment: environment, isEnabled: { true }, connectionDidOpen: opened)
     }
 
     private func track() -> MusicTrack {
@@ -88,15 +84,94 @@ final class SpotifyConnectionTests: XCTestCase {
     }
 }
 
+final class SpotifyPlaybackRestorerTests: XCTestCase {
+    private final class RecordedRestoreState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var position: Double?
+        private var playState: Bool?
+        private var modified = false
+
+        var recordedPosition: Double? { lock.withLock { position } }
+        var recordedPlayState: Bool? { lock.withLock { playState } }
+        var didModifyPlayback: Bool { lock.withLock { modified } }
+
+        func recordPosition(_ value: Double) {
+            lock.withLock {
+                position = value
+                modified = true
+            }
+        }
+
+        func recordPlayState(_ value: Bool) {
+            lock.withLock {
+                playState = value
+                modified = true
+            }
+        }
+    }
+
+    func testRestoresPositionAndPlaybackStateWhenTrackMatches() async {
+        let state = RecordedRestoreState()
+        let restorer = SpotifyPlaybackRestorer(
+            fetchTrackID: { _ in "spotify:track:6vgarqZvEEzWUgCK45gCfz" },
+            setPosition: { position, _ in
+                state.recordPosition(position)
+                return true
+            },
+            sendPlaybackCommand: { isPlaying, _ in
+                state.recordPlayState(isPlaying)
+            }
+        )
+        let track = MusicTrack(
+            source: .spotify,
+            sourceTrackID: "6vgarqZvEEzWUgCK45gCfz",
+            name: "Test",
+            artist: "Artist",
+            album: "Album",
+            durationMs: 200_000,
+            progressMs: 45_500,
+            isPlaying: false
+        )
+        await restorer.restore(track, pid: 123)
+        XCTAssertEqual(state.recordedPosition, 45.5)
+        XCTAssertEqual(state.recordedPlayState, false)
+    }
+
+    func testDoesNotAlterPlaybackWhenUserChangedTrack() async {
+        let state = RecordedRestoreState()
+        let restorer = SpotifyPlaybackRestorer(
+            fetchTrackID: { _ in "spotify:track:0000000000000000000000" },
+            setPosition: { position, _ in
+                state.recordPosition(position)
+                return true
+            },
+            sendPlaybackCommand: { isPlaying, _ in
+                state.recordPlayState(isPlaying)
+            }
+        )
+        let track = MusicTrack(
+            source: .spotify,
+            sourceTrackID: "6vgarqZvEEzWUgCK45gCfz",
+            name: "Test",
+            artist: "Artist",
+            album: "Album",
+            durationMs: 200_000,
+            progressMs: 45_500,
+            isPlaying: true
+        )
+        await restorer.restore(track, pid: 123)
+        XCTAssertFalse(state.didModifyPlayback)
+    }
+}
+
 @MainActor
 private final class FakeConnectionEnvironment: SpotifyConnectionEnvironment {
     var spotifyIsRunning = true
-    var helperIsInstalled = true
     var launchFails = false
     var holdFirstProbe = false
     var probeContinuation: CheckedContinuation<Void, Never>?
     var restoredTracks: [MusicTrack] = []
-    var launches = 0
+    var preparations = 0
     var probes = 0
     private var ready: [Bool]
 
@@ -110,8 +185,8 @@ private final class FakeConnectionEnvironment: SpotifyConnectionEnvironment {
         return ready.isEmpty ? false : ready.removeFirst()
     }
 
-    func launchHelper() throws {
-        launches += 1
+    func prepareConnection() throws {
+        preparations += 1
         if launchFails { throw SpotifyClientBridgeError.unavailable }
     }
 

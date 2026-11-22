@@ -15,10 +15,12 @@ struct StatusTextFormatter {
         return Self.isInstrumental(lyricsLine) ? "" : lyricsLine
     }
 
+    private static let instrumentalSymbols = CharacterSet(
+        charactersIn: "♪♫♬♩🎵🎶\u{FE0E}\u{FE0F}"
+    ).union(.whitespacesAndNewlines)
+
     private static func isInstrumental(_ text: String) -> Bool {
-        let symbols = CharacterSet(charactersIn: "♪♫♬♩🎵🎶\u{FE0E}\u{FE0F}")
-            .union(.whitespacesAndNewlines)
-        return text.unicodeScalars.allSatisfy { symbols.contains($0) }
+        text.unicodeScalars.allSatisfy { instrumentalSymbols.contains($0) }
     }
 
     func sourceDescription(for track: MusicTrack, lyricsSource: String?) -> String {

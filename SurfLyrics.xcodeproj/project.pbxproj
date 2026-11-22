@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C41000000000000000000003 /* AppleEventClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C41000000000000000000004 /* AppleEventClient.swift */; };
 		C41000000000000000000001 /* SharedRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = C41000000000000000000002 /* SharedRequest.swift */; };
 		A30000000000000000000001 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 8634CC9B2F866BB2008DDC84 /* AppIcon.icon */; };
 		A2000000000000000000000000000010 /* SpotifyConnectionLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000000000010 /* SpotifyConnectionLauncher.swift */; };
@@ -57,8 +58,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		C41000000000000000000004 /* AppleEventClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleEventClient.swift; sourceTree = "<group>"; };
 		C41000000000000000000002 /* SharedRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedRequest.swift; sourceTree = "<group>"; };
-		B2000000000000000000000000000010 /* SpotifyConnectionLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../SpotifyConnectionHelper/SpotifyConnectionLauncher.swift"; sourceTree = "<group>"; };
+		B2000000000000000000000000000010 /* SpotifyConnectionLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyConnectionLauncher.swift; sourceTree = "<group>"; };
 		B2000000000000000000000000000009 /* SpotifyConnectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SpotifyConnectionTests.swift"; sourceTree = "<group>"; };
 		B2000000000000000000000000000008 /* SpotifyClientConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyClientConnection.swift; sourceTree = "<group>"; };
 		B2000000000000000000000000000007 /* SpotifyClientEndpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyClientEndpoint.swift; sourceTree = "<group>"; };
@@ -125,6 +127,7 @@
 			children = (
 				B2000000000000000000000000000001 /* SpotifyClientLyricsClient.swift */,
 				B2000000000000000000000000000008 /* SpotifyClientConnection.swift */,
+				B2000000000000000000000000000010 /* SpotifyConnectionLauncher.swift */,
 				B2000000000000000000000000000007 /* SpotifyClientEndpoint.swift */,
 				B2000000000000000000000000000006 /* LyricsPayloadDecoder.swift */,
 				B2000000000000000000000000000005 /* LyricsCache.swift */,
@@ -145,6 +148,7 @@
 				1BEF4BA3BB8E498C8FCE8ADC8AC75ED2 /* Models.swift */,
 				B1000000000000000000000000000011 /* LaunchAtLoginManager.swift */,
 				B1000000000000000000000000000005 /* MusicManager.swift */,
+				C41000000000000000000004 /* AppleEventClient.swift */,
 				B1000000000000000000000000000006 /* MusicPlaybackClient.swift */,
 				B1000000000000000000000000000007 /* LyricsService.swift */,
 				B1000000000000000000000000000012 /* LRCLIBClient.swift */,
@@ -163,7 +167,6 @@
 			isa = PBXGroup;
 			children = (
 				B2000000000000000000000000000003 /* SpotifyClientLyricsTests.swift */,
-				B2000000000000000000000000000010 /* SpotifyConnectionLauncher.swift */,
 				B2000000000000000000000000000009 /* SpotifyConnectionTests.swift */,
 				D3000000000000000000000000000001 /* ModelTests.swift */,
 				D3000000000000000000000000000002 /* PlaybackTests.swift */,
@@ -275,6 +278,7 @@
 			files = (
 				A2000000000000000000000000000001 /* SpotifyClientLyricsClient.swift in Sources */,
 				A2000000000000000000000000000008 /* SpotifyClientConnection.swift in Sources */,
+				A2000000000000000000000000000010 /* SpotifyConnectionLauncher.swift in Sources */,
 				A2000000000000000000000000000007 /* SpotifyClientEndpoint.swift in Sources */,
 				A2000000000000000000000000000006 /* LyricsPayloadDecoder.swift in Sources */,
 				A2000000000000000000000000000005 /* LyricsCache.swift in Sources */,
@@ -294,6 +298,7 @@
 				D371EDAE7663465A9B8CE83911EA10F8 /* Models.swift in Sources */,
 				A1000000000000000000000000000011 /* LaunchAtLoginManager.swift in Sources */,
 				A1000000000000000000000000000005 /* MusicManager.swift in Sources */,
+				C41000000000000000000003 /* AppleEventClient.swift in Sources */,
 				A1000000000000000000000000000006 /* MusicPlaybackClient.swift in Sources */,
 				A1000000000000000000000000000007 /* LyricsService.swift in Sources */,
 				A1000000000000000000000000000012 /* LRCLIBClient.swift in Sources */,
@@ -309,7 +314,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				A2000000000000000000000000000003 /* SpotifyClientLyricsTests.swift in Sources */,
-				A2000000000000000000000000000010 /* SpotifyConnectionLauncher.swift in Sources */,
 				A2000000000000000000000000000009 /* SpotifyConnectionTests.swift in Sources */,
 				D2000000000000000000000000000001 /* ModelTests.swift in Sources */,
 				D2000000000000000000000000000002 /* PlaybackTests.swift in Sources */,
@@ -339,15 +343,15 @@
 				CODE_SIGN_ENTITLEMENTS = SurfLyrics/SurfLyrics.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 26100201;
+				CURRENT_PROJECT_VERSION = 26112201;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 2RDF6J3XVV;
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = SurfLyrics/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SurfLyrics;
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 1.1.4;
+				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aloedawn.surflyrics;
 				PRODUCT_NAME = SurfLyrics;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -489,15 +493,15 @@
 				CODE_SIGN_ENTITLEMENTS = SurfLyrics/SurfLyrics.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 26100201;
+				CURRENT_PROJECT_VERSION = 26112201;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 2RDF6J3XVV;
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = SurfLyrics/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SurfLyrics;
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 1.1.4;
+				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aloedawn.surflyrics;
 				PRODUCT_NAME = SurfLyrics;
 				SWIFT_EMIT_LOC_STRINGS = YES;

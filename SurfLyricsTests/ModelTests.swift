@@ -39,6 +39,29 @@ final class ModelTests: XCTestCase {
         )
     }
 
+    func testLRCParserPureSwiftScannerHandlesColonFractionsMetadataAndWhitespace() {
+        let lines = LRCParser.parse(
+            """
+            [ar:Artist Name]
+            [ti:Track Title]
+              [00:01:25]  Colon fraction
+            [00:02.1239]Truncated fraction
+            [00:03.5]Single digit fraction
+            [00:04]
+            """
+        )
+
+        XCTAssertEqual(
+            lines,
+            [
+                LyricsLine(timeMs: 1_250, text: "Colon fraction"),
+                LyricsLine(timeMs: 2_123, text: "Truncated fraction"),
+                LyricsLine(timeMs: 3_500, text: "Single digit fraction"),
+                LyricsLine(timeMs: 4_000, text: ""),
+            ]
+        )
+    }
+
     func testLyricsLookupFindsCurrentAndNextLineWithBoundaries() {
         let lyrics = Lyrics(lines: [
             LyricsLine(timeMs: 1_000, text: "One"),

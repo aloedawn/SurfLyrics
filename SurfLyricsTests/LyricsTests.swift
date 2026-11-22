@@ -327,6 +327,28 @@ final class LyricsCacheTests: XCTestCase {
         XCTAssertEqual(loads, 0)
     }
 
+    func testInvalidateClearsPositiveAndNegativeEntriesForAllProviders() async {
+        let cache = LyricsCache()
+        let track = makeTrack(name: "Localized", sourceTrackID: "StableTrack123")
+        let clientKey = LyricsCacheKey(provider: .spotifyClient, track: track)
+        let lrclibKey = LyricsCacheKey(provider: .lrclib, track: track)
+        var loads = 0
+
+        _ = await cache.value(for: clientKey) { loads += 1; return .notFound }
+        _ = await cache.value(for: lrclibKey) { loads += 1; return self.found("Cached") }
+        _ = await cache.value(for: clientKey) { loads += 1; return self.found("Should not load") }
+        _ = await cache.value(for: lrclibKey) { loads += 1; return self.found("Should not load") }
+        XCTAssertEqual(loads, 2)
+
+        cache.invalidate(for: makeTrack(name: "Canonical", sourceTrackID: "StableTrack123"))
+
+        let clientReloaded = await cache.value(for: clientKey) { loads += 1; return self.found("Fresh client") }
+        let lrclibReloaded = await cache.value(for: lrclibKey) { loads += 1; return self.found("Fresh LRCLIB") }
+        XCTAssertEqual(clientReloaded, found("Fresh client"))
+        XCTAssertEqual(lrclibReloaded, found("Fresh LRCLIB"))
+        XCTAssertEqual(loads, 4)
+    }
+
     private func eventually(_ condition: @MainActor () -> Bool) async -> Bool {
         for _ in 0..<1_000 {
             if condition() { return true }

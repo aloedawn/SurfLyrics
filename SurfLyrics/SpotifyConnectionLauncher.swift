@@ -1,9 +1,5 @@
 import AppKit
 
-#if !SURFLYRICS_CONNECTION_HELPER
-@testable import SurfLyrics
-#endif
-
 enum SpotifyConnectionLaunchError: Error {
     case spotifyMissing, couldNotQuit, timedOut, unsafeListener
 }
@@ -49,7 +45,7 @@ struct SpotifyConnectionLauncher {
 
 @MainActor
 final class NativeSpotifyLaunchEnvironment: SpotifyLaunchEnvironment {
-    private let session = SpotifyClientEndpoint.makeSession()
+    private let session = SpotifyClientEndpoint.sharedSession
 
     func isReady() async -> Bool {
         (try? await SpotifyClientEndpoint.debuggerURL(using: session)) != nil

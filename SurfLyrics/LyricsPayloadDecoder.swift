@@ -7,12 +7,13 @@ actor LyricsPayloadDecoder {
         category: "LyricsDecoding"
     )
     private let matcher = LyricsCandidateMatcher.default
+    private let jsonDecoder = JSONDecoder()
 
     func decodeLRCLIB(_ data: Data) -> LyricsFetchResult {
         let interval = signposter.beginInterval("LRCLIBDecode")
         defer { signposter.endInterval("LRCLIBDecode", interval) }
 
-        guard let payload = try? JSONDecoder().decode(LRCLIBPayload.self, from: data) else {
+        guard let payload = try? jsonDecoder.decode(LRCLIBPayload.self, from: data) else {
             return .transientFailure
         }
         guard let lrc = payload.syncedLyrics, !lrc.isEmpty else {
@@ -28,7 +29,7 @@ actor LyricsPayloadDecoder {
         let interval = signposter.beginInterval("LRCLIBSearchDecode")
         defer { signposter.endInterval("LRCLIBSearchDecode", interval) }
 
-        guard let payloads = try? JSONDecoder().decode([LRCLIBPayload].self, from: data) else {
+        guard let payloads = try? jsonDecoder.decode([LRCLIBPayload].self, from: data) else {
             return .transientFailure
         }
 
@@ -67,7 +68,7 @@ actor LyricsPayloadDecoder {
         let interval = signposter.beginInterval("MusixmatchDecode")
         defer { signposter.endInterval("MusixmatchDecode", interval) }
 
-        guard let payload = try? JSONDecoder().decode(MusixmatchPayload.self, from: data)
+        guard let payload = try? jsonDecoder.decode(MusixmatchPayload.self, from: data)
         else {
             return (false, .transientFailure)
         }
@@ -110,7 +111,7 @@ actor LyricsPayloadDecoder {
     }
 
     func decodeMusixmatchToken(_ data: Data) -> String? {
-        guard let payload = try? JSONDecoder().decode(MusixmatchPayload.self, from: data)
+        guard let payload = try? jsonDecoder.decode(MusixmatchPayload.self, from: data)
         else { return nil }
         if let status = payload.message?.header?.statusCode, status != 200 { return nil }
         let token = payload.message?.body?.userToken
@@ -118,7 +119,7 @@ actor LyricsPayloadDecoder {
     }
 
     func musixmatchRequiresTokenRefresh(_ data: Data) -> Bool {
-        (try? JSONDecoder().decode(MusixmatchPayload.self, from: data))?
+        (try? jsonDecoder.decode(MusixmatchPayload.self, from: data))?
             .statusCodes.contains(401) == true
     }
 

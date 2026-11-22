@@ -105,8 +105,38 @@ test("renumbering works without reinitializing unrelated modules on repeat reque
     const f = fixture({ ids: [700001, 700002] });
     for (let i = 0; i < 2; i++) assert.equal((await f.extract(trackID)).status, "found");
     assert.equal(f.loaded.includes("unrelated"), false);
+    assert.deepEqual(f.loaded, ["700002", "700001"]);
     assert.equal(f.calls.filter(([name]) => name === "send").length, 2);
     assert.equal(f.chunks.length, 0);
+});
+
+test("discovered client is cached across repeat calls without rescanning module factories", async () => {
+    const f = fixture({ ids: [700001, 700002] });
+    assert.equal((await f.extract(trackID)).status, "found");
+    delete f.modules[700001];
+    delete f.modules[700002];
+    delete f.cache[700001];
+    delete f.cache[700002];
+    assert.equal((await f.extract(trackID)).status, "found");
+    assert.equal(f.calls.filter(([name]) => name === "send").length, 2);
+});
+
+test("stale or invalidated cached client falls back cleanly to rediscovery", async () => {
+    const f = fixture({ ids: [700001, 700002] });
+    assert.equal((await f.extract(trackID)).status, "found");
+    const cacheKey = Symbol.for("surflyrics.lyricsClient.v1");
+    f.context[cacheKey].client = { build: () => ({}) };
+    assert.equal((await f.extract(trackID)).status, "found");
+    assert.deepEqual(f.loaded, ["700002", "700001", "700002", "700001"]);
+});
+
+test("bridge discovery leaves no string or enumerable keys on globalThis", async () => {
+    const f = fixture();
+    const initialNames = Object.getOwnPropertyNames(f.context).sort();
+    const initialKeys = Object.keys(f.context).sort();
+    assert.equal((await f.extract(trackID)).status, "found");
+    assert.deepEqual(Object.getOwnPropertyNames(f.context).sort(), initialNames);
+    assert.deepEqual(Object.keys(f.context).sort(), initialKeys);
 });
 
 test("a source match must still export a compatible singleton and complete builder", async () => {

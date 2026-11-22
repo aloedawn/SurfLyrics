@@ -4,8 +4,8 @@
 - 이 저장소의 검증된 관련 커밋에는 현재 브랜치의 설정된 upstream으로 일반 push하는 상시 승인이 적용된다. 먼저 브랜치·원격·작성자·staged 경로를 확인하며 강제 push·배포 설정 변경·별도 릴리스 실행은 포함하지 않는다. 사용자의 현재 제한 지시를 우선한다.
 - 관련 없는 변경이나 빈 커밋은 만들지 않는다.
 
-## 배포와 Xcode Cloud
+## 배포와 릴리스 (GitHub / Homebrew)
 
-- 릴리스 및 Xcode Cloud 빌드 번호 관리의 세부 절차와 과거 확인 사례는 [docs/RELEASING_XCODE_CLOUD.md](docs/RELEASING_XCODE_CLOUD.md)를 참조한다.
-- App Store Connect 설정 변경이나 새 Cloud 빌드 실행은 사용자의 명시적 승인 없이 수행하지 않는다.
-- 빌드 번호만 별도 커밋해 먼저 push하지 않는다. 배포할 변경을 모두 포함한 최종 커밋을 준비한 뒤 Cloud 번호를 확인하고 한 번에 push하여, 후속 push가 진행 중 빌드를 자동 취소하지 않게 한다.
+- 릴리스 패키징과 Cask 생성 절차는 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)를 참조한다.
+- 공개 GitHub Release 게시, 태그 push, Homebrew Tap(`aloedawn/homebrew-tap`) 업데이트, 서명·공증 설정 변경은 사용자의 명시적 승인 없이 수행하지 않는다.
+- 릴리스 전 `scripts/spotify-client-bridge.test.mjs`, 셸 문법 검사, `xcodebuild test`가 모두 통과한 단일 검증 커밋을 `main`에 push한 뒤 패키징·게시한다.

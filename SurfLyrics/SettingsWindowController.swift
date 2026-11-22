@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class SettingsWindowController {
+final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
 
     func show(appState: AppState) {
@@ -13,6 +13,12 @@ final class SettingsWindowController {
         window?.center()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        if (notification.object as? NSWindow) === window {
+            window = nil
+        }
     }
 
     private func makeWindow(appState: AppState) -> NSWindow {
@@ -27,6 +33,7 @@ final class SettingsWindowController {
         window.setContentSize(NSSize(width: 720, height: 440))
         window.minSize = NSSize(width: 640, height: 380)
         window.isReleasedWhenClosed = false
+        window.delegate = self
         return window
     }
 }

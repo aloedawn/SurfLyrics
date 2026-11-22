@@ -2,6 +2,11 @@ import Foundation
 
 protocol SpotifyClientLyricsProviding: Sendable {
     func fetch(for track: MusicTrack) async -> LyricsFetchResult
+    func invalidateEndpoint() async
+}
+
+extension SpotifyClientLyricsProviding {
+    func invalidateEndpoint() async {}
 }
 
 actor SpotifyClientLyricsClient: SpotifyClientLyricsProviding {
@@ -11,6 +16,8 @@ actor SpotifyClientLyricsClient: SpotifyClientLyricsProviding {
     private let connection: (any SpotifyConnectionPreparing)?
     private let evaluator: (@Sendable (String) async throws -> Data)?
     private let warmupDelay: @Sendable () async throws -> Void
+    private let jsonDecoder = JSONDecoder()
+    private var cachedSocketURL: URL?
 
     init(
         connection: (any SpotifyConnectionPreparing)? = nil,
@@ -20,9 +27,13 @@ actor SpotifyClientLyricsClient: SpotifyClientLyricsProviding {
         self.connection = connection
         self.evaluator = evaluator
         self.warmupDelay = warmupDelay
-        session = SpotifyClientEndpoint.makeSession()
+        session = SpotifyClientEndpoint.sharedSession
         bridgeSource = Bundle.main.url(forResource: "SpotifyClientBridge", withExtension: "js")
             .flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+    }
+
+    func invalidateEndpoint() {
+        cachedSocketURL = nil
     }
 
     func fetch(for track: MusicTrack) async -> LyricsFetchResult {
@@ -45,7 +56,7 @@ actor SpotifyClientLyricsClient: SpotifyClientLyricsProviding {
                     value = try await evaluate(expression)
                 }
                 try Task.checkCancellation()
-                result = Self.decode(value, expectedTrack: track)
+                result = Self.decode(value, expectedTrack: track, decoder: jsonDecoder)
             } catch {
                 // Do not log CDP responses or request objects, which can contain client internals.
                 result = .transientFailure
@@ -60,9 +71,26 @@ actor SpotifyClientLyricsClient: SpotifyClientLyricsProviding {
     }
 
     private func evaluate(_ expression: String) async throws -> Data {
-        let socketURL = try await SpotifyClientEndpoint.debuggerURL(using: session)
+        if let socketURL = cachedSocketURL {
+            do {
+                return try await evaluate(expression, socketURL: socketURL)
+            } catch {
+                cachedSocketURL = nil
+                try Task.checkCancellation()
+            }
+        }
+        let freshSocketURL = try await SpotifyClientEndpoint.debuggerURL(using: session)
+        cachedSocketURL = freshSocketURL
         try Task.checkCancellation()
+        do {
+            return try await evaluate(expression, socketURL: freshSocketURL)
+        } catch {
+            cachedSocketURL = nil
+            throw error
+        }
+    }
 
+    private func evaluate(_ expression: String, socketURL: URL) async throws -> Data {
         let socket = session.webSocketTask(with: socketURL)
         socket.maximumMessageSize = 1_000_000
         socket.resume()
@@ -118,8 +146,16 @@ actor SpotifyClientLyricsClient: SpotifyClientLyricsProviding {
     }
 
     nonisolated static func decode(_ data: Data, expectedTrack: MusicTrack) -> LyricsFetchResult {
+        decode(data, expectedTrack: expectedTrack, decoder: JSONDecoder())
+    }
+
+    private nonisolated static func decode(
+        _ data: Data,
+        expectedTrack: MusicTrack,
+        decoder: JSONDecoder
+    ) -> LyricsFetchResult {
         guard data.count <= 1_000_000,
-            let payload = try? JSONDecoder().decode(ClientLyricsPayload.self, from: data)
+            let payload = try? decoder.decode(ClientLyricsPayload.self, from: data)
         else { return .transientFailure }
         guard payload.trackID == expectedTrack.sourceTrackID else { return .transientFailure }
         switch payload.status {

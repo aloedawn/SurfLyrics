@@ -67,18 +67,22 @@ final class LyricsService {
         return (nil, nil)
     }
 
+    func invalidateCache(for track: MusicTrack) {
+        cache.invalidate(for: track)
+    }
+
+    func invalidateSpotifyEndpoint() async {
+        await spotifyClient.invalidateEndpoint()
+    }
+
     private func fetch(from provider: LyricsProvider, for track: MusicTrack) async -> LyricsFetchResult {
         guard !Task.isCancelled else { return .transientFailure }
-        if provider == .spotifyClient {
-            // Retry the live source before fallback caches, so connecting Spotify takes effect immediately.
-            return await spotifyClient.fetch(for: track)
-        }
         return await cache.value(for: LyricsCacheKey(provider: provider, track: track)) {
-            [lrclibClient, musixmatchClient] in
+            [spotifyClient, lrclibClient, musixmatchClient] in
             switch provider {
+            case .spotifyClient: await spotifyClient.fetch(for: track)
             case .lrclib: await lrclibClient.fetch(for: track)
             case .musixmatch: await musixmatchClient.fetch(for: track)
-            case .spotifyClient: .transientFailure // The live client bypasses this cache.
             }
         }
     }
@@ -100,6 +104,9 @@ private enum LyricsSessionFactory {
         configuration.timeoutIntervalForResource = 15.0
         configuration.httpMaximumConnectionsPerHost = 1
         configuration.requestCachePolicy = .useProtocolCachePolicy
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieStorage = nil
+        configuration.urlCache = URLCache(memoryCapacity: 2 * 1024 * 1024, diskCapacity: 0)
         return URLSession(configuration: configuration)
     }
 }

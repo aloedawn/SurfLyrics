@@ -1,4 +1,5 @@
 import AppKit
+import CoreServices
 import Foundation
 import os
 
@@ -12,7 +13,13 @@ enum TrackProbeResult: Sendable {
 @MainActor
 protocol MusicPlayerProbing: AnyObject {
     func runningPlayers() -> Set<MusicPlayer>
-    func probe(_ player: MusicPlayer) async -> TrackProbeResult
+    func probe(_ player: MusicPlayer, forceFullMetadata: Bool) async -> TrackProbeResult
+}
+
+extension MusicPlayerProbing {
+    func probe(_ player: MusicPlayer) async -> TrackProbeResult {
+        await probe(player, forceFullMetadata: true)
+    }
 }
 
 @MainActor
@@ -24,15 +31,18 @@ final class MusicPlaybackClient {
     )
 
     init(playerProbe: (any MusicPlayerProbing)? = nil) {
-        self.playerProbe = playerProbe ?? AppleScriptPlayerProbe()
+        self.playerProbe = playerProbe ?? AppleEventPlayerProbe()
     }
 
-    func getCurrentTrack(preferredPlayer: MusicPlayer?) async -> MusicPlaybackResult {
+    func getCurrentTrack(
+        preferredPlayer: MusicPlayer?,
+        forceFullMetadata: Bool = true
+    ) async -> MusicPlaybackResult {
         let runningPlayers = playerProbe.runningPlayers()
         guard !runningPlayers.isEmpty else {
             return MusicPlaybackResult(
                 track: nil,
-                issue: .unavailable("지원 음악 앱 미실행")
+                issue: .noRunningPlayers
             )
         }
 
@@ -43,7 +53,7 @@ final class MusicPlaybackClient {
 
         for player in orderedPlayers where runningPlayers.contains(player) {
             let interval = signposter.beginInterval("PlayerProbe")
-            let result = await playerProbe.probe(player)
+            let result = await playerProbe.probe(player, forceFullMetadata: forceFullMetadata)
             signposter.endInterval("PlayerProbe", interval)
 
             switch result {
@@ -84,8 +94,8 @@ final class MusicPlaybackClient {
 }
 
 @MainActor
-final class AppleScriptPlayerProbe: MusicPlayerProbing {
-    private let worker = AppleScriptProbeWorker()
+final class AppleEventPlayerProbe: MusicPlayerProbing {
+    private let worker = AppleEventProbeWorker()
 
     func runningPlayers() -> Set<MusicPlayer> {
         Set(MusicPlayer.allCases.filter { player in
@@ -95,127 +105,24 @@ final class AppleScriptPlayerProbe: MusicPlayerProbing {
         })
     }
 
-    func probe(_ player: MusicPlayer) async -> TrackProbeResult {
-        let script = Self.currentTrackScript(for: player)
-        return await worker.probe(player: player, source: script)
-    }
-
-    nonisolated static func currentTrackScript(for player: MusicPlayer) -> String {
-        let spotifyIdentityScript: String
-        switch player {
-        case .spotify:
-            spotifyIdentityScript = """
-                    try
-                        set trackID to id of currentItem as text
-                    end try
-                    try
-                        set trackURL to spotify url of currentItem as text
-                    end try
-                """
-        case .appleMusic:
-            spotifyIdentityScript = ""
+    func probe(_ player: MusicPlayer, forceFullMetadata: Bool) async -> TrackProbeResult {
+        guard let pid = NSRunningApplication.runningApplications(
+            withBundleIdentifier: player.bundleIdentifier
+        ).first?.processIdentifier else {
+            await worker.invalidateCache(for: player)
+            return .inactive
         }
-
-        return """
-        if application id "\(player.bundleIdentifier)" is running then
-            tell application id "\(player.bundleIdentifier)"
-                if player state is playing or player state is paused then
-                    set sep to character id 31
-                    set stateStr to "playing"
-                    if player state is paused then set stateStr to "paused"
-                    try
-                        set currentItem to current track
-                    on error
-                        return ""
-                    end try
-                    set trackName to ""
-                    set artistName to ""
-                    set albumName to ""
-                    set trackDuration to 0
-                    set trackPosition to 0
-                    set trackID to ""
-                    set trackURL to ""
-                    try
-                        set trackName to name of currentItem as text
-                    end try
-                    try
-                        set artistName to artist of currentItem as text
-                    end try
-                    try
-                        set albumName to album of currentItem as text
-                    end try
-                    try
-                        set trackDuration to duration of currentItem
-                    end try
-                    try
-                        set trackPosition to player position
-                    end try
-        \(spotifyIdentityScript)
-                    return stateStr & sep & trackName & sep & artistName & sep & albumName & sep & trackDuration & sep & trackPosition & sep & trackID & sep & trackURL
-                end if
-            end tell
-        end if
-        return ""
-        """
+        return await worker.probe(player: player, pid: pid, forceFullMetadata: forceFullMetadata)
     }
 }
 
-struct AppleScriptTrackResponseParser {
-    struct ParseError: Error, Equatable {
-        let actualFieldCount: Int
-    }
-
-    static let separator = "\u{1F}"
-    static let expectedFieldCount = 8
-
-    private enum Field: Int {
-        case state
-        case name
-        case artist
-        case album
-        case duration
-        case position
-        case sourceTrackID
-        case sourceTrackURL
-    }
-
-    static func parse(_ response: String, player: MusicPlayer) throws -> MusicTrack {
-        let parts = response.components(separatedBy: separator)
-        guard parts.count == expectedFieldCount else {
-            throw ParseError(actualFieldCount: parts.count)
-        }
-
-        let durationValue = Double(parts[Field.duration.rawValue]) ?? 0
-        let durationMs = player.reportsDurationInMilliseconds
-            ? Int(durationValue)
-            : Int(durationValue * 1000)
-        let progressMs = Int((Double(parts[Field.position.rawValue]) ?? 0) * 1000)
-        let spotifyIdentity = player == .spotify
-            ? spotifyPlaybackIdentity(
-                rawID: parts[Field.sourceTrackID.rawValue],
-                rawURL: parts[Field.sourceTrackURL.rawValue]
-            )
-            : SpotifyPlaybackIdentity(trackID: nil, itemKind: .track)
-
-        return MusicTrack(
-            source: player,
-            sourceTrackID: spotifyIdentity.trackID,
-            itemKind: spotifyIdentity.itemKind,
-            name: parts[Field.name.rawValue],
-            artist: parts[Field.artist.rawValue],
-            album: parts[Field.album.rawValue],
-            durationMs: durationMs,
-            progressMs: progressMs,
-            isPlaying: parts[Field.state.rawValue] == "playing"
-        )
-    }
-
-    private struct SpotifyPlaybackIdentity {
+struct SpotifyTrackIdentityParser {
+    struct Identity: Equatable, Sendable {
         let trackID: String?
         let itemKind: PlaybackItemKind
     }
 
-    private enum SpotifyResourceIdentity: Equatable {
+    private enum ResourceIdentity: Equatable {
         case track(String)
         case localTrack(String)
         case episode
@@ -227,38 +134,35 @@ struct AppleScriptTrackResponseParser {
         case malformed
     }
 
-    private static func spotifyPlaybackIdentity(
-        rawID: String,
-        rawURL: String
-    ) -> SpotifyPlaybackIdentity {
-        let idIdentity = spotifyResourceIdentity(from: rawID)
-        let urlIdentity = spotifyResourceIdentity(from: rawURL)
+    static func parse(rawID: String, rawURL: String) -> Identity {
+        let idIdentity = resourceIdentity(from: rawID)
+        let urlIdentity = resourceIdentity(from: rawURL)
 
         switch (idIdentity, urlIdentity) {
         case let (.track(id), .track(urlID)):
             return id == urlID
-                ? SpotifyPlaybackIdentity(trackID: id, itemKind: .track)
-                : SpotifyPlaybackIdentity(trackID: nil, itemKind: .unsupported)
+                ? Identity(trackID: id, itemKind: .track)
+                : Identity(trackID: nil, itemKind: .unsupported)
         case let (.track(id), .bare(bareID)), let (.bare(bareID), .track(id)):
             return id == bareID
-                ? SpotifyPlaybackIdentity(trackID: id, itemKind: .track)
-                : SpotifyPlaybackIdentity(trackID: nil, itemKind: .unsupported)
+                ? Identity(trackID: id, itemKind: .track)
+                : Identity(trackID: nil, itemKind: .unsupported)
         case let (.track(id), .empty), let (.empty, .track(id)):
-            return SpotifyPlaybackIdentity(trackID: id, itemKind: .track)
+            return Identity(trackID: id, itemKind: .track)
         case let (.localTrack(id), .localTrack(urlID)):
-            return SpotifyPlaybackIdentity(
+            return Identity(
                 trackID: nil,
                 itemKind: id == urlID ? .localTrack : .unsupported
             )
         case (.localTrack, .empty), (.empty, .localTrack),
             (.localTrack, .bare), (.bare, .localTrack):
-            return SpotifyPlaybackIdentity(trackID: nil, itemKind: .localTrack)
+            return Identity(trackID: nil, itemKind: .localTrack)
         case (.episode, .episode), (.episode, .empty), (.empty, .episode),
             (.episode, .bare), (.bare, .episode):
-            return SpotifyPlaybackIdentity(trackID: nil, itemKind: .episode)
+            return Identity(trackID: nil, itemKind: .episode)
         case (.advertisement, .advertisement), (.advertisement, .empty),
             (.empty, .advertisement), (.advertisement, .bare), (.bare, .advertisement):
-            return SpotifyPlaybackIdentity(trackID: nil, itemKind: .advertisement)
+            return Identity(trackID: nil, itemKind: .advertisement)
         case (.unsupported, _), (_, .unsupported), (.nonTrack, _), (_, .nonTrack),
             (.malformed, .track), (.track, .malformed), (.malformed, .localTrack),
             (.localTrack, .malformed), (.malformed, .episode), (.episode, .malformed),
@@ -268,15 +172,15 @@ struct AppleScriptTrackResponseParser {
             (.localTrack, .episode), (.episode, .localTrack),
             (.localTrack, .advertisement), (.advertisement, .localTrack),
             (.episode, .advertisement), (.advertisement, .episode):
-            return SpotifyPlaybackIdentity(trackID: nil, itemKind: .unsupported)
+            return Identity(trackID: nil, itemKind: .unsupported)
         case (.bare, .bare), (.bare, .empty), (.empty, .bare), (.empty, .empty),
             (.malformed, .malformed), (.malformed, .bare), (.bare, .malformed),
             (.malformed, .empty), (.empty, .malformed):
-            return SpotifyPlaybackIdentity(trackID: nil, itemKind: .unknown)
+            return Identity(trackID: nil, itemKind: .unknown)
         }
     }
 
-    private static func spotifyResourceIdentity(from candidate: String) -> SpotifyResourceIdentity {
+    private static func resourceIdentity(from candidate: String) -> ResourceIdentity {
         let value = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return .empty }
 
@@ -349,61 +253,329 @@ struct AppleScriptTrackResponseParser {
     }
 }
 
-private final class AppleScriptProbeWorker: @unchecked Sendable {
+protocol AppleEventQuerySending: Sendable {
+    func getApplicationProperty(
+        _ property: OSType,
+        pid: pid_t
+    ) -> Result<NSAppleEventDescriptor, AppleEventError>
+    func getTrackProperty(
+        _ property: OSType,
+        pid: pid_t
+    ) -> Result<NSAppleEventDescriptor, AppleEventError>
+    func checkCurrentTrackExists(pid: pid_t) -> Result<Void, AppleEventError>
+}
+
+final class NativeAppleEventQuerySender: AppleEventQuerySending, @unchecked Sendable {
+    private let currentTrackSpecifier: NSAppleEventDescriptor?
+    private let appSpecifiers: [OSType: NSAppleEventDescriptor]
+    private let trackSpecifiers: [OSType: NSAppleEventDescriptor]
+
+    init() {
+        let track = AppleEventClient.currentTrackSpecifier()
+        currentTrackSpecifier = track
+
+        var appSpecs: [OSType: NSAppleEventDescriptor] = [:]
+        for property in [
+            AppleEventClient.playerStateProperty,
+            AppleEventClient.playerPositionProperty,
+        ] {
+            if let spec = AppleEventClient.propertySpecifier(property: property) {
+                appSpecs[property] = spec
+            }
+        }
+        appSpecifiers = appSpecs
+
+        var trackSpecs: [OSType: NSAppleEventDescriptor] = [:]
+        if let track {
+            for property in [
+                AppleEventClient.trackNameProperty,
+                AppleEventClient.trackArtistProperty,
+                AppleEventClient.trackAlbumProperty,
+                AppleEventClient.trackDurationProperty,
+                AppleEventClient.trackIDProperty,
+                AppleEventClient.spotifyURLProperty,
+                AppleEventClient.persistentIDProperty,
+            ] {
+                if let spec = AppleEventClient.propertySpecifier(container: track, property: property) {
+                    trackSpecs[property] = spec
+                }
+            }
+        }
+        trackSpecifiers = trackSpecs
+    }
+
+    func getApplicationProperty(
+        _ property: OSType,
+        pid: pid_t
+    ) -> Result<NSAppleEventDescriptor, AppleEventError> {
+        guard let specifier = appSpecifiers[property]
+            ?? AppleEventClient.propertySpecifier(property: property)
+        else {
+            return .failure(.osError(OSStatus(errAEParamMissed), "Specifier error"))
+        }
+        return AppleEventClient.getData(of: specifier, pid: pid)
+    }
+
+    func getTrackProperty(
+        _ property: OSType,
+        pid: pid_t
+    ) -> Result<NSAppleEventDescriptor, AppleEventError> {
+        guard let specifier = trackSpecifiers[property]
+            ?? currentTrackSpecifier.flatMap({
+                AppleEventClient.propertySpecifier(container: $0, property: property)
+            })
+        else {
+            return .failure(.osError(OSStatus(errAEParamMissed), "Specifier error"))
+        }
+        return AppleEventClient.getData(of: specifier, pid: pid)
+    }
+
+    func checkCurrentTrackExists(pid: pid_t) -> Result<Void, AppleEventError> {
+        guard let specifier = currentTrackSpecifier else {
+            return .failure(.osError(OSStatus(errAEParamMissed), "Specifier error"))
+        }
+        return AppleEventClient.getData(of: specifier, pid: pid).map { _ in () }
+    }
+}
+
+final class AppleEventProbeWorker: @unchecked Sendable {
+    private struct CachedTrack {
+        let pid: pid_t
+        let rawTrackKey: String
+        let track: MusicTrack
+    }
+
     private let queue = DispatchQueue(label: "com.aloedawn.surflyrics.playback-probe", qos: .utility)
-    private var scripts: [MusicPlayer: NSAppleScript] = [:]
+    private let sender: any AppleEventQuerySending
+    private var cache: [MusicPlayer: CachedTrack] = [:]
 
-    func probe(player: MusicPlayer, source: String) async -> TrackProbeResult {
-        return await withCheckedContinuation { continuation in
+    init(sender: any AppleEventQuerySending = NativeAppleEventQuerySender()) {
+        self.sender = sender
+    }
+
+    func invalidateCache(for player: MusicPlayer) async {
+        await withCheckedContinuation { continuation in
             queue.async { [self] in
-                guard let appleScript = compiledScript(for: player, source: source) else {
-                    continuation.resume(returning: .failure("\(player.displayName) 스크립트 생성 실패"))
-                    return
-                }
-
-                var error: NSDictionary?
-                let result = appleScript.executeAndReturnError(&error)
-                if let error {
-                    let code = error[NSAppleScript.errorNumber] as? Int ?? -1
-                    let msg = error[NSAppleScript.errorMessage] as? String ?? "unknown"
-                    let message = "\(player.displayName) AS err \(code): \(msg)"
-                    if code == -1743 {
-                        continuation.resume(returning: .permissionDenied(message))
-                    } else {
-                        continuation.resume(returning: .failure(message))
-                    }
-                    return
-                }
-                guard let str = result.stringValue, !str.isEmpty else {
-                    continuation.resume(returning: .inactive)
-                    return
-                }
-                let track: MusicTrack
-                do {
-                    track = try AppleScriptTrackResponseParser.parse(str, player: player)
-                } catch let parseError as AppleScriptTrackResponseParser.ParseError {
-                    continuation.resume(returning: .failure(
-                        "\(player.displayName) 파싱 오류: \(parseError.actualFieldCount)개"
-                    ))
-                    return
-                } catch {
-                    continuation.resume(returning: .failure("\(player.displayName) 파싱 오류"))
-                    return
-                }
-                continuation.resume(returning: .track(track))
+                cache[player] = nil
+                continuation.resume()
             }
         }
     }
 
-    private func compiledScript(for player: MusicPlayer, source: String) -> NSAppleScript? {
-        if let script = scripts[player] {
-            return script
+    func probe(
+        player: MusicPlayer,
+        pid: pid_t,
+        forceFullMetadata: Bool = true
+    ) async -> TrackProbeResult {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                continuation.resume(
+                    returning: probeSync(
+                        player: player,
+                        pid: pid,
+                        forceFullMetadata: forceFullMetadata
+                    )
+                )
+            }
+        }
+    }
+
+    private func probeSync(
+        player: MusicPlayer,
+        pid: pid_t,
+        forceFullMetadata: Bool
+    ) -> TrackProbeResult {
+        let isPlaying: Bool
+        switch sender.getApplicationProperty(AppleEventClient.playerStateProperty, pid: pid) {
+        case let .success(descriptor):
+            guard let stateCode = AppleEventClient.enumCode(from: descriptor) else {
+                cache[player] = nil
+                return .inactive
+            }
+            switch stateCode {
+            case AppleEventClient.playingEnum,
+                AppleEventClient.fastForwardingEnum,
+                AppleEventClient.rewindingEnum:
+                isPlaying = true
+            case AppleEventClient.pausedEnum:
+                isPlaying = false
+            default:
+                cache[player] = nil
+                return .inactive
+            }
+        case let .failure(error):
+            return mapTerminalError(error, player: player)
         }
 
-        guard let script = NSAppleScript(source: source) else { return nil }
-        var error: NSDictionary?
-        guard script.compileAndReturnError(&error) else { return nil }
-        scripts[player] = script
-        return script
+        let progressMs: Int
+        switch optionalDoubleProperty(
+            AppleEventClient.playerPositionProperty,
+            onTrack: false,
+            pid: pid
+        ) {
+        case let .success(positionSeconds):
+            progressMs = max(0, Int((positionSeconds ?? 0) * 1_000))
+        case let .failure(error):
+            return mapTerminalError(error, player: player)
+        }
+
+        let trackKeyProperty = player == .spotify
+            ? AppleEventClient.trackIDProperty
+            : AppleEventClient.persistentIDProperty
+        let rawTrackKey: String
+        switch optionalStringProperty(trackKeyProperty, onTrack: true, pid: pid) {
+        case let .success(value):
+            if value == nil {
+                switch sender.checkCurrentTrackExists(pid: pid) {
+                case .success:
+                    rawTrackKey = ""
+                case let .failure(error):
+                    return mapTerminalError(error, player: player)
+                }
+            } else {
+                rawTrackKey = value ?? ""
+            }
+        case let .failure(error):
+            return mapTerminalError(error, player: player)
+        }
+
+        if !forceFullMetadata,
+            let cached = cache[player],
+            cached.pid == pid,
+            !rawTrackKey.isEmpty,
+            cached.rawTrackKey == rawTrackKey,
+            !cached.track.name.isEmpty,
+            !cached.track.artist.isEmpty,
+            cached.track.itemKind != .unknown
+        {
+            let refreshed = MusicTrack(
+                source: cached.track.source,
+                sourceTrackID: cached.track.sourceTrackID,
+                itemKind: cached.track.itemKind,
+                name: cached.track.name,
+                artist: cached.track.artist,
+                album: cached.track.album,
+                durationMs: cached.track.durationMs,
+                progressMs: progressMs,
+                isPlaying: isPlaying
+            )
+            return .track(refreshed)
+        }
+
+        let name: String
+        switch optionalStringProperty(AppleEventClient.trackNameProperty, onTrack: true, pid: pid) {
+        case let .success(value):
+            name = value ?? ""
+        case let .failure(error):
+            return mapTerminalError(error, player: player)
+        }
+
+        let artist: String
+        switch optionalStringProperty(AppleEventClient.trackArtistProperty, onTrack: true, pid: pid) {
+        case let .success(value):
+            artist = value ?? ""
+        case let .failure(error):
+            return mapTerminalError(error, player: player)
+        }
+
+        let album: String
+        switch optionalStringProperty(AppleEventClient.trackAlbumProperty, onTrack: true, pid: pid) {
+        case let .success(value):
+            album = value ?? ""
+        case let .failure(error):
+            return mapTerminalError(error, player: player)
+        }
+
+        let durationValue: Double
+        switch optionalDoubleProperty(AppleEventClient.trackDurationProperty, onTrack: true, pid: pid) {
+        case let .success(value):
+            durationValue = value ?? 0
+        case let .failure(error):
+            return mapTerminalError(error, player: player)
+        }
+
+        let durationMs = player.reportsDurationInMilliseconds
+            ? max(0, Int(durationValue))
+            : max(0, Int(durationValue * 1_000))
+
+        let identity: SpotifyTrackIdentityParser.Identity
+        if player == .spotify {
+            let rawURL: String
+            switch optionalStringProperty(AppleEventClient.spotifyURLProperty, onTrack: true, pid: pid) {
+            case let .success(value):
+                rawURL = value ?? ""
+            case let .failure(error):
+                return mapTerminalError(error, player: player)
+            }
+            identity = SpotifyTrackIdentityParser.parse(rawID: rawTrackKey, rawURL: rawURL)
+        } else {
+            identity = SpotifyTrackIdentityParser.Identity(trackID: nil, itemKind: .track)
+        }
+
+        let track = MusicTrack(
+            source: player,
+            sourceTrackID: identity.trackID,
+            itemKind: identity.itemKind,
+            name: name,
+            artist: artist,
+            album: album,
+            durationMs: durationMs,
+            progressMs: progressMs,
+            isPlaying: isPlaying
+        )
+        if !rawTrackKey.isEmpty {
+            cache[player] = CachedTrack(pid: pid, rawTrackKey: rawTrackKey, track: track)
+        } else {
+            cache[player] = nil
+        }
+        return .track(track)
+    }
+
+    private func optionalStringProperty(
+        _ property: OSType,
+        onTrack: Bool,
+        pid: pid_t
+    ) -> Result<String?, AppleEventError> {
+        let response = onTrack
+            ? sender.getTrackProperty(property, pid: pid)
+            : sender.getApplicationProperty(property, pid: pid)
+        switch response {
+        case let .success(descriptor):
+            return .success(descriptor.stringValue ?? "")
+        case let .failure(.targetUnavailable(code)) where code == OSStatus(errAENoSuchObject):
+            return .success(nil)
+        case let .failure(error):
+            return .failure(error)
+        }
+    }
+
+    private func optionalDoubleProperty(
+        _ property: OSType,
+        onTrack: Bool,
+        pid: pid_t
+    ) -> Result<Double?, AppleEventError> {
+        let response = onTrack
+            ? sender.getTrackProperty(property, pid: pid)
+            : sender.getApplicationProperty(property, pid: pid)
+        switch response {
+        case let .success(descriptor):
+            return .success(AppleEventClient.doubleValue(from: descriptor))
+        case let .failure(.targetUnavailable(code)) where code == OSStatus(errAENoSuchObject):
+            return .success(nil)
+        case let .failure(error):
+            return .failure(error)
+        }
+    }
+
+    private func mapTerminalError(_ error: AppleEventError, player: MusicPlayer) -> TrackProbeResult {
+        cache[player] = nil
+        switch error {
+        case let .permissionDenied(code):
+            return .permissionDenied("\(player.displayName) AE err \(code): 접근 권한 필요")
+        case .targetUnavailable:
+            return .inactive
+        case let .osError(code, message):
+            return .failure("\(player.displayName) AE err \(code): \(message)")
+        }
     }
 }

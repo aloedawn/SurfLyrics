@@ -1,8 +1,6 @@
-import SwiftUI
+import AppKit
 
-struct SurfLyricsApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    var body: some Scene { Settings { EmptyView() } }
-}
-
-SurfLyricsApp.main()
+let application = NSApplication.shared
+let delegate = AppDelegate()
+application.delegate = delegate
+application.run()
