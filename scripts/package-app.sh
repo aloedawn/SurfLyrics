@@ -5,7 +5,21 @@ repository_dir="$(cd "$(dirname "$0")/.." && pwd)"
 output_dir="${1:-$repository_dir/build}"
 signing_mode="${SURFLYRICS_SIGNING_MODE:-developer-id}"
 notary_profile="${SURFLYRICS_NOTARY_PROFILE:-}"
-notarize="${SURFLYRICS_NOTARIZE:-0}"
+
+if [[ -n "${SURFLYRICS_NOTARIZE_MODE:-}" ]]; then
+    notarize_mode="$SURFLYRICS_NOTARIZE_MODE"
+elif [[ -n "$notary_profile" ]]; then
+    notarize_mode="notarytool"
+elif [[ "$signing_mode" == "developer-id" ]]; then
+    notarize_mode="xcode"
+else
+    notarize_mode="none"
+fi
+
+if [[ "$signing_mode" != "developer-id" && "$notarize_mode" != "none" ]]; then
+    printf 'Notarization (%s) requires SURFLYRICS_SIGNING_MODE=developer-id.\n' "$notarize_mode" >&2
+    exit 1
+fi
 
 mkdir -p "$output_dir"
 output_dir="$(cd "$output_dir" && pwd)"
@@ -24,13 +38,60 @@ xcodebuild archive \
     -archivePath "$archive_path" \
     -destination "generic/platform=macOS"
 
+export_notarized_via_xcode() {
+    xcodebuild -exportArchive \
+        -archivePath "$archive_path" \
+        -exportOptionsPlist "$repository_dir/scripts/ExportOptionsNotarize.plist" \
+        -allowProvisioningUpdates
+
+    local attempt=1
+    local max_attempts=24
+    while (( attempt <= max_attempts )); do
+        local output=""
+        if output=$(xcodebuild -exportNotarizedApp \
+            -archivePath "$archive_path" \
+            -exportPath "$export_dir" 2>&1); then
+            printf '%s\n' "$output"
+            xcrun stapler validate "$app_path"
+            spctl -a -t exec -vv "$app_path"
+            return 0
+        fi
+        printf '%s\n' "$output"
+        if grep -qiE 'rejected|invalid|unnotarized|authentication|sign in|credentials|failed to connect' <<<"$output"; then
+            return 1
+        fi
+        if grep -qiE 'in progress|not yet|processing|waiting|not ready' <<<"$output" && (( attempt < max_attempts )); then
+            printf 'Waiting for Apple notarization (%d/%d)...\n' "$attempt" "$max_attempts"
+            sleep 15
+            (( attempt++ ))
+            continue
+        fi
+        return 1
+    done
+    printf 'Timed out waiting for Xcode notarization.\n' >&2
+    return 1
+}
+
+notarized="no"
 case "$signing_mode" in
     developer-id)
-        xcodebuild -exportArchive \
-            -archivePath "$archive_path" \
-            -exportPath "$export_dir" \
-            -exportOptionsPlist "$repository_dir/scripts/ExportOptions.plist" \
-            -allowProvisioningUpdates
+        case "$notarize_mode" in
+            xcode)
+                export_notarized_via_xcode
+                notarized="yes"
+                ;;
+            notarytool|none)
+                xcodebuild -exportArchive \
+                    -archivePath "$archive_path" \
+                    -exportPath "$export_dir" \
+                    -exportOptionsPlist "$repository_dir/scripts/ExportOptions.plist" \
+                    -allowProvisioningUpdates
+                ;;
+            *)
+                printf 'Unsupported SURFLYRICS_NOTARIZE_MODE: %s\n' "$notarize_mode" >&2
+                exit 1
+                ;;
+        esac
         ;;
     development)
         ditto "$archive_path/Products/Applications/SurfLyrics.app" "$app_path"
@@ -67,8 +128,7 @@ hdiutil create \
     -format UDZO \
     -ov "$dmg_path"
 
-notarized="no"
-if [[ "$signing_mode" == "developer-id" ]] && [[ -n "$notary_profile" || "$notarize" == "1" ]]; then
+if [[ "$signing_mode" == "developer-id" && "$notarize_mode" == "notarytool" ]]; then
     if [[ -z "$notary_profile" ]]; then
         printf 'Set SURFLYRICS_NOTARY_PROFILE (configured via xcrun notarytool store-credentials).\n' >&2
         exit 1
@@ -82,5 +142,5 @@ fi
 (cd "$output_dir" && shasum -a 256 "$(basename "$dmg_path")") > "$dmg_path.sha256"
 sha256="$(awk '{print $1}' "$dmg_path.sha256")"
 
-printf '\nApp: %s\nDMG: %s\nSHA256: %s\nSigning: %s\nNotarized: %s\n' \
-    "$app_path" "$dmg_path" "$sha256" "$signing_mode" "$notarized"
+printf '\nApp: %s\nDMG: %s\nSHA256: %s\nSigning: %s\nNotarized: %s (%s)\n' \
+    "$app_path" "$dmg_path" "$sha256" "$signing_mode" "$notarized" "$notarize_mode"

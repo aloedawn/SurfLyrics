@@ -33,14 +33,20 @@ xcodebuild test -project SurfLyrics.xcodeproj -scheme SurfLyrics -destination 'p
 ## Packaging & Release (GitHub / Homebrew)
 
 ```sh
-# Local unsigned / development build check:
+# Local development-signed build check (no notarization):
 SURFLYRICS_SIGNING_MODE=development bash scripts/package-app.sh
 
-# Public Developer ID + notarized DMG:
-SURFLYRICS_SIGNING_MODE=developer-id SURFLYRICS_NOTARY_PROFILE="<keychain-profile>" bash scripts/package-app.sh
+# Public Developer ID + Xcode notarized DMG (default):
+bash scripts/package-app.sh
+
+# Optional: notarize via notarytool keychain profile instead of Xcode upload:
+SURFLYRICS_NOTARY_PROFILE="<keychain-profile>" bash scripts/package-app.sh
+
+# Developer ID export without notarization:
+SURFLYRICS_NOTARIZE_MODE=none bash scripts/package-app.sh
 
 # Full release (tests, DMG, GitHub Release, aloedawn/homebrew-tap Cask update):
-SURFLYRICS_NOTARY_PROFILE="<keychain-profile>" bash scripts/release.sh
+bash scripts/release.sh
 ```
 
-`scripts/ExportOptions.plist` uses `method = developer-id`, `signingStyle = automatic`, and `teamID = 2RDF6J3XVV`. `scripts/render-cask.sh` generates `Casks/surflyrics.rb` for `aloedawn/homebrew-tap` (`depends_on arch: :arm64`, `depends_on macos: :golden_gate`).
+`scripts/ExportOptions.plist` and `scripts/ExportOptionsNotarize.plist` use `method = developer-id`, `signingStyle = automatic`, and `teamID = 2RDF6J3XVV`. `SURFLYRICS_NOTARIZE_MODE` supports `xcode` (default for `developer-id`), `notarytool`, or `none`. `scripts/render-cask.sh` generates `Casks/surflyrics.rb` for `aloedawn/homebrew-tap` (`depends_on arch: :arm64`, `depends_on macos: :golden_gate`).
