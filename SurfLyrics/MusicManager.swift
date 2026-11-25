@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 protocol MusicManaging: AnyObject {
-    func getCurrentTrack(preferredPlayer: MusicPlayer?, forceFullMetadata: Bool) async -> MusicPlaybackResult
+    func getCurrentTrack(preferredPlayer: MusicPlayer?, probeMode: PlaybackProbeMode) async -> MusicPlaybackResult
     func getLyrics(for track: MusicTrack) async -> (Lyrics?, String?)
     func invalidateLyricsCache(for track: MusicTrack)
     func invalidateSpotifyEndpoint()
@@ -10,7 +10,7 @@ protocol MusicManaging: AnyObject {
 
 extension MusicManaging {
     func getCurrentTrack(preferredPlayer: MusicPlayer?) async -> MusicPlaybackResult {
-        await getCurrentTrack(preferredPlayer: preferredPlayer, forceFullMetadata: true)
+        await getCurrentTrack(preferredPlayer: preferredPlayer, probeMode: .fullMetadata)
     }
 
     func invalidateLyricsCache(for track: MusicTrack) {}
@@ -33,11 +33,11 @@ final class MusicManager: MusicManaging {
 
     func getCurrentTrack(
         preferredPlayer: MusicPlayer?,
-        forceFullMetadata: Bool
+        probeMode: PlaybackProbeMode
     ) async -> MusicPlaybackResult {
         await playbackClient.getCurrentTrack(
             preferredPlayer: preferredPlayer,
-            forceFullMetadata: forceFullMetadata
+            probeMode: probeMode
         )
     }
 

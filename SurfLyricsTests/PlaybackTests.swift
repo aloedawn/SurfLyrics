@@ -518,7 +518,11 @@ final class PlaybackTests: XCTestCase {
 
         let lyricsDisplayed = await eventually { state.statusText == "Now" }
         XCTAssertTrue(lyricsDisplayed)
-        XCTAssertEqual(state.scheduledSyncDate, originalSyncDate)
+        guard let updatedSyncDate = state.scheduledSyncDate else {
+            return XCTFail("Expected sync timer to remain scheduled")
+        }
+        XCTAssertLessThan(updatedSyncDate, originalSyncDate)
+        XCTAssertEqual(state.scheduledSyncInterval ?? -1, 2.0, accuracy: 0.001)
     }
 
     func testScheduledLyricTimerAdvancesDisplayWithoutPlaybackIPC() async {
@@ -553,7 +557,7 @@ final class PlaybackTests: XCTestCase {
         state.fireScheduledSyncForTesting()
         let syncStarted = await eventually { manager.playbackCallCount == 2 }
         XCTAssertTrue(syncStarted)
-        XCTAssertEqual(manager.forceFullMetadataFlags, [true, false])
+        XCTAssertEqual(manager.probeModes, [.fullMetadata, .positionOnly(expectedProgressMs: 2_000)])
     }
 
     func testIntroSchedulesLyricTimerAndAccountsForFetchElapsedTime() async {
@@ -585,7 +589,9 @@ final class PlaybackTests: XCTestCase {
         now = 52.0
         state.fireScheduledLyricUpdateForTesting()
         XCTAssertEqual(state.statusText, "First line")
-        XCTAssertEqual(manager.playbackCallCount, 1)
+        let piggybackStarted = await eventually { manager.playbackCallCount == 2 }
+        XCTAssertTrue(piggybackStarted)
+        XCTAssertEqual(manager.probeModes, [.fullMetadata, .positionOnly(expectedProgressMs: 2_500)])
     }
 
     func testLocalizedMissRetriesChangedMetadataForSameSourceID() async {
@@ -759,7 +765,7 @@ final class PlaybackTests: XCTestCase {
         let gapDisplayed = await eventually { state.statusText == "" && state.sourceText?.contains("Spotify 클라이언트") == true }
         XCTAssertTrue(gapDisplayed)
         XCTAssertEqual(state.scheduledLyricInterval ?? -1, 1.0, accuracy: 0.05)
-        XCTAssertEqual(state.scheduledSyncInterval, 5.0)
+        XCTAssertEqual(state.scheduledSyncInterval ?? -1, 2.0, accuracy: 0.001)
 
         state.requestPlaybackRefresh(preferredPlayer: .spotify)
         _ = await eventually { manager.playbackCallCount == 2 }
@@ -828,8 +834,279 @@ final class PlaybackTests: XCTestCase {
         let lyricScheduled = await eventually { syncedState.scheduledLyricInterval == 0.5 }
         XCTAssertTrue(lyricScheduled)
         XCTAssertEqual(syncedState.scheduledLyricTolerance ?? -1, 0.03, accuracy: 0.001)
-        XCTAssertEqual(syncedState.scheduledSyncInterval ?? -1, 5.0, accuracy: 0.001)
+        XCTAssertEqual(syncedState.scheduledSyncInterval ?? -1, 2.0, accuracy: 0.001)
+        XCTAssertEqual(syncedState.scheduledSyncTolerance ?? -1, 0.4, accuracy: 0.001)
         syncedState.shutdown()
+    }
+
+    func testAppleEventProbeWorkerPositionOnlyFastPathSeekStallTrackChangeAndEndOfTrack() async {
+        let sender = FakeAppleEventSender()
+        sender.appReplies[AppleEventClient.playerStateProperty] = .success(
+            NSAppleEventDescriptor(enumCode: AppleEventClient.playingEnum)
+        )
+        sender.appReplies[AppleEventClient.playerPositionProperty] = .success(
+            NSAppleEventDescriptor(double: 35.0)
+        )
+        sender.trackReplies[AppleEventClient.trackIDProperty] = .success(
+            NSAppleEventDescriptor(string: "spotify:track:AbC123xYz")
+        )
+        sender.trackReplies[AppleEventClient.trackNameProperty] = .success(
+            NSAppleEventDescriptor(string: "Track One")
+        )
+        sender.trackReplies[AppleEventClient.trackArtistProperty] = .success(
+            NSAppleEventDescriptor(string: "Artist One")
+        )
+        sender.trackReplies[AppleEventClient.trackAlbumProperty] = .success(
+            NSAppleEventDescriptor(string: "Album One")
+        )
+        sender.trackReplies[AppleEventClient.trackDurationProperty] = .success(
+            NSAppleEventDescriptor(int32: 180_000)
+        )
+        sender.trackReplies[AppleEventClient.spotifyURLProperty] = .success(
+            NSAppleEventDescriptor(string: "https://open.spotify.com/track/AbC123xYz")
+        )
+
+        let worker = AppleEventProbeWorker(sender: sender)
+
+        let initial = await worker.probe(player: .spotify, pid: 100, mode: .fullMetadata)
+        guard case .track = initial else { return XCTFail("Expected initial track") }
+        XCTAssertEqual(sender.recordedProperties.count, 8)
+
+        // Normal playback: 1-AE positionOnly fast path.
+        sender.recordedProperties.removeAll()
+        sender.appReplies[AppleEventClient.playerPositionProperty] = .success(
+            NSAppleEventDescriptor(double: 37.0)
+        )
+        let fastHit = await worker.probe(
+            player: .spotify,
+            pid: 100,
+            mode: .positionOnly(expectedProgressMs: 37_200)
+        )
+        guard case let .track(fastTrack) = fastHit else { return XCTFail("Expected fast-path track") }
+        XCTAssertEqual(fastTrack.progressMs, 37_000)
+        XCTAssertTrue(fastTrack.isPlaying)
+        XCTAssertEqual(sender.recordedProperties, [AppleEventClient.playerPositionProperty])
+
+        // Seek jump (37s -> 66s): falls through to 3-AE check reusing prefetched pPos.
+        sender.recordedProperties.removeAll()
+        sender.appReplies[AppleEventClient.playerPositionProperty] = .success(
+            NSAppleEventDescriptor(double: 66.0)
+        )
+        let seekHit = await worker.probe(
+            player: .spotify,
+            pid: 100,
+            mode: .positionOnly(expectedProgressMs: 39_000)
+        )
+        guard case let .track(soughtTrack) = seekHit else { return XCTFail("Expected sought track") }
+        XCTAssertEqual(soughtTrack.progressMs, 66_000)
+        XCTAssertEqual(sender.recordedProperties, [
+            AppleEventClient.playerPositionProperty,
+            AppleEventClient.playerStateProperty,
+            AppleEventClient.trackIDProperty,
+        ])
+
+        // Subsequent poll resumes 1-AE fast path anchored at 66s.
+        sender.recordedProperties.removeAll()
+        sender.appReplies[AppleEventClient.playerPositionProperty] = .success(
+            NSAppleEventDescriptor(double: 68.0)
+        )
+        let afterSeek = await worker.probe(
+            player: .spotify,
+            pid: 100,
+            mode: .positionOnly(expectedProgressMs: 68_100)
+        )
+        guard case let .track(afterSeekTrack) = afterSeek else { return XCTFail("Expected fast path after seek") }
+        XCTAssertEqual(afterSeekTrack.progressMs, 68_000)
+        XCTAssertEqual(sender.recordedProperties, [AppleEventClient.playerPositionProperty])
+
+        // Near end of track (within 1.5s of 180s): falls through to 3-AE check.
+        sender.recordedProperties.removeAll()
+        sender.appReplies[AppleEventClient.playerPositionProperty] = .success(
+            NSAppleEventDescriptor(double: 179.0)
+        )
+        let nearEnd = await worker.probe(
+            player: .spotify,
+            pid: 100,
+            mode: .positionOnly(expectedProgressMs: 179_000)
+        )
+        guard case .track = nearEnd else { return XCTFail("Expected near-end track") }
+        XCTAssertEqual(sender.recordedProperties, [
+            AppleEventClient.playerPositionProperty,
+            AppleEventClient.playerStateProperty,
+            AppleEventClient.trackIDProperty,
+        ])
+
+        // Stall / missed pause: position unchanged after >= 1.1s falls through and updates cached isPlaying = false.
+        sender.recordedProperties.removeAll()
+        sender.appReplies[AppleEventClient.playerPositionProperty] = .success(
+            NSAppleEventDescriptor(double: 179.0)
+        )
+        sender.appReplies[AppleEventClient.playerStateProperty] = .success(
+            NSAppleEventDescriptor(enumCode: AppleEventClient.pausedEnum)
+        )
+        let stalledPause = await worker.probe(
+            player: .spotify,
+            pid: 100,
+            mode: .positionOnly(expectedProgressMs: 180_500)
+        )
+        guard case let .track(pausedTrack) = stalledPause else { return XCTFail("Expected paused track") }
+        XCTAssertFalse(pausedTrack.isPlaying)
+        XCTAssertEqual(sender.recordedProperties, [
+            AppleEventClient.playerPositionProperty,
+            AppleEventClient.playerStateProperty,
+            AppleEventClient.trackIDProperty,
+        ])
+
+        // While paused, positionOnly skips 1-AE fast path and checks state directly.
+        sender.recordedProperties.removeAll()
+        let stillPaused = await worker.probe(
+            player: .spotify,
+            pid: 100,
+            mode: .positionOnly(expectedProgressMs: 180_500)
+        )
+        guard case let .track(stillPausedTrack) = stillPaused else { return XCTFail("Expected still paused") }
+        XCTAssertFalse(stillPausedTrack.isPlaying)
+        XCTAssertEqual(sender.recordedProperties, [
+            AppleEventClient.playerStateProperty,
+            AppleEventClient.playerPositionProperty,
+            AppleEventClient.trackIDProperty,
+        ])
+
+        // Resume playing, then missed-notification track change (drift + new track ID) fetches full metadata reusing prefetched pPos.
+        sender.appReplies[AppleEventClient.playerStateProperty] = .success(
+            NSAppleEventDescriptor(enumCode: AppleEventClient.playingEnum)
+        )
+        sender.appReplies[AppleEventClient.playerPositionProperty] = .success(
+            NSAppleEventDescriptor(double: 10.0)
+        )
+        _ = await worker.probe(player: .spotify, pid: 100, mode: .trackAndState)
+
+        sender.recordedProperties.removeAll()
+        sender.appReplies[AppleEventClient.playerPositionProperty] = .success(
+            NSAppleEventDescriptor(double: 1.5)
+        )
+        sender.trackReplies[AppleEventClient.trackIDProperty] = .success(
+            NSAppleEventDescriptor(string: "spotify:track:ZyX987AbC")
+        )
+        sender.trackReplies[AppleEventClient.spotifyURLProperty] = .success(
+            NSAppleEventDescriptor(string: "")
+        )
+        sender.trackReplies[AppleEventClient.trackNameProperty] = .success(
+            NSAppleEventDescriptor(string: "Track Two")
+        )
+        let changed = await worker.probe(
+            player: .spotify,
+            pid: 100,
+            mode: .positionOnly(expectedProgressMs: 12_000)
+        )
+        guard case let .track(changedTrack) = changed else { return XCTFail("Expected new track") }
+        XCTAssertEqual(changedTrack.name, "Track Two")
+        XCTAssertEqual(changedTrack.progressMs, 1_500)
+        XCTAssertEqual(sender.recordedProperties.count, 8)
+        XCTAssertEqual(sender.recordedProperties.first, AppleEventClient.playerPositionProperty)
+
+        // Stopped / missing playerPosition object returns inactive and clears cache.
+        sender.recordedProperties.removeAll()
+        sender.appReplies[AppleEventClient.playerPositionProperty] = .failure(.targetUnavailable(-1728))
+        sender.appReplies[AppleEventClient.playerStateProperty] = .success(
+            NSAppleEventDescriptor(enumCode: AppleEventClient.stoppedEnum)
+        )
+        let stopped = await worker.probe(
+            player: .spotify,
+            pid: 100,
+            mode: .positionOnly(expectedProgressMs: 3_500)
+        )
+        guard case .inactive = stopped else { return XCTFail("Expected inactive when stopped") }
+    }
+
+    func testMusicPlaybackClientDowngradesPositionOnlyForFallbackPlayer() async {
+        let probe = StubPlayerProbe(
+            running: [.spotify, .appleMusic],
+            results: [
+                .spotify: .inactive,
+                .appleMusic: .track(makeTrack(source: .appleMusic, isPlaying: true)),
+            ]
+        )
+        let client = MusicPlaybackClient(playerProbe: probe)
+
+        let result = await client.getCurrentTrack(
+            preferredPlayer: .spotify,
+            probeMode: .positionOnly(expectedProgressMs: 42_000)
+        )
+
+        XCTAssertEqual(result.track?.source, .appleMusic)
+        XCTAssertEqual(probe.calls, [.spotify, .appleMusic])
+        XCTAssertEqual(probe.probeModes, [
+            .positionOnly(expectedProgressMs: 42_000),
+            .trackAndState,
+        ])
+    }
+
+    func testAppStateSeekUpdatesLyricsViaSyncAndPiggybackAndMergesProbeModes() async {
+        let manager = ControlledMusicManager()
+        var now: TimeInterval = 200.0
+        let state = AppState(musicManager: manager, monotonicTime: { now })
+        defer { state.shutdown() }
+
+        _ = await eventually { manager.playbackCallCount == 1 }
+        manager.resolveNextPlayback(with: .init(
+            track: makeTrack(source: .spotify, isPlaying: true, durationMs: 180_000, progressMs: 35_000),
+            issue: nil
+        ))
+        _ = await eventually { manager.lyricsCallCount == 1 }
+        manager.resolveLyrics(
+            forTrackNamed: "Track",
+            with: (Lyrics(lines: [
+                LyricsLine(timeMs: 30_000, text: "Line at 30s"),
+                LyricsLine(timeMs: 38_000, text: "Line at 38s"),
+                LyricsLine(timeMs: 65_000, text: "Line at 65s"),
+                LyricsLine(timeMs: 70_000, text: "Line at 70s"),
+            ]), "Test")
+        )
+        _ = await eventually { state.statusText == "Line at 30s" }
+
+        // Lyric transition after >= 1.5s piggybacks positionOnly and picks up seek (38s -> 66s).
+        now = 203.0
+        state.fireScheduledLyricUpdateForTesting()
+        XCTAssertEqual(state.statusText, "Line at 38s")
+        let piggybacked = await eventually { manager.playbackCallCount == 2 }
+        XCTAssertTrue(piggybacked)
+        XCTAssertEqual(manager.probeModes.last, .positionOnly(expectedProgressMs: 38_000))
+
+        manager.resolveNextPlayback(with: .init(
+            track: makeTrack(source: .spotify, isPlaying: true, durationMs: 180_000, progressMs: 66_000),
+            issue: nil
+        ))
+        let jumpedTo65 = await eventually { state.statusText == "Line at 65s" }
+        XCTAssertTrue(jumpedTo65)
+        XCTAssertEqual(state.scheduledLyricInterval ?? -1, 4.0, accuracy: 0.001)
+
+        // End of track (< 8s remaining) uses trackAndState instead of positionOnly.
+        now = 204.0
+        state.fireScheduledSyncForTesting()
+        _ = await eventually { manager.playbackCallCount == 3 }
+        manager.resolveNextPlayback(with: .init(
+            track: makeTrack(source: .spotify, isPlaying: true, durationMs: 180_000, progressMs: 175_000),
+            issue: nil
+        ))
+        let endOfTrackScheduled = await eventually { (state.scheduledSyncInterval ?? 0) > 4.0 }
+        XCTAssertTrue(endOfTrackScheduled)
+        state.fireScheduledSyncForTesting()
+        let endOfTrackSyncStarted = await eventually { manager.playbackCallCount == 4 }
+        XCTAssertTrue(endOfTrackSyncStarted)
+        XCTAssertEqual(manager.probeModes.last, .trackAndState)
+
+        // Coalescing preserves fullMetadata when a trailing notification arrives while trackAndState is in flight.
+        state.requestPlaybackRefresh(preferredPlayer: .spotify, probeMode: .fullMetadata)
+        manager.resolveNextPlayback(with: .init(
+            track: makeTrack(source: .spotify, isPlaying: true, durationMs: 180_000, progressMs: 176_000),
+            issue: nil
+        ))
+        let trailingFullStarted = await eventually { manager.playbackCallCount == 5 }
+        XCTAssertTrue(trailingFullStarted)
+        XCTAssertEqual(manager.probeModes.last, .fullMetadata)
+        manager.resolveNextPlayback(with: .init(track: nil, issue: .noRunningPlayers))
+        _ = await eventually { manager.pendingPlaybackCount == 0 }
     }
 
     private func eventually(
@@ -899,6 +1176,7 @@ private final class StubPlayerProbe: MusicPlayerProbing {
     let running: Set<MusicPlayer>
     let results: [MusicPlayer: TrackProbeResult]
     private(set) var calls: [MusicPlayer] = []
+    private(set) var probeModes: [PlaybackProbeMode] = []
 
     init(running: Set<MusicPlayer>, results: [MusicPlayer: TrackProbeResult]) {
         self.running = running
@@ -909,8 +1187,9 @@ private final class StubPlayerProbe: MusicPlayerProbing {
         running
     }
 
-    func probe(_ player: MusicPlayer, forceFullMetadata: Bool) async -> TrackProbeResult {
+    func probe(_ player: MusicPlayer, probeMode: PlaybackProbeMode) async -> TrackProbeResult {
         calls.append(player)
+        probeModes.append(probeMode)
         return results[player] ?? .inactive
     }
 }
@@ -918,7 +1197,7 @@ private final class StubPlayerProbe: MusicPlayerProbing {
 @MainActor
 private final class ControlledMusicManager: MusicManaging {
     private(set) var preferredPlayers: [MusicPlayer?] = []
-    private(set) var forceFullMetadataFlags: [Bool] = []
+    private(set) var probeModes: [PlaybackProbeMode] = []
     private(set) var invalidatedTracks: [MusicTrack] = []
     private(set) var endpointInvalidationCount = 0
     private var playbackContinuations: [CheckedContinuation<MusicPlaybackResult, Never>] = []
@@ -933,10 +1212,10 @@ private final class ControlledMusicManager: MusicManaging {
 
     func getCurrentTrack(
         preferredPlayer: MusicPlayer?,
-        forceFullMetadata: Bool
+        probeMode: PlaybackProbeMode
     ) async -> MusicPlaybackResult {
         preferredPlayers.append(preferredPlayer)
-        forceFullMetadataFlags.append(forceFullMetadata)
+        probeModes.append(probeMode)
         return await withCheckedContinuation { continuation in
             playbackContinuations.append(continuation)
         }

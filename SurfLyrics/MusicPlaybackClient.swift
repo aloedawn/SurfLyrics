@@ -3,6 +3,27 @@ import CoreServices
 import Foundation
 import os
 
+enum PlaybackProbeMode: Equatable, Sendable {
+    case positionOnly(expectedProgressMs: Int)
+    case trackAndState
+    case fullMetadata
+
+    var isFullMetadata: Bool {
+        self == .fullMetadata
+    }
+
+    func merged(with incoming: PlaybackProbeMode) -> PlaybackProbeMode {
+        switch (self, incoming) {
+        case (.fullMetadata, _), (_, .fullMetadata):
+            .fullMetadata
+        case (.trackAndState, _), (_, .trackAndState):
+            .trackAndState
+        case (.positionOnly, .positionOnly):
+            incoming
+        }
+    }
+}
+
 enum TrackProbeResult: Sendable {
     case track(MusicTrack)
     case inactive
@@ -13,12 +34,12 @@ enum TrackProbeResult: Sendable {
 @MainActor
 protocol MusicPlayerProbing: AnyObject {
     func runningPlayers() -> Set<MusicPlayer>
-    func probe(_ player: MusicPlayer, forceFullMetadata: Bool) async -> TrackProbeResult
+    func probe(_ player: MusicPlayer, probeMode: PlaybackProbeMode) async -> TrackProbeResult
 }
 
 extension MusicPlayerProbing {
     func probe(_ player: MusicPlayer) async -> TrackProbeResult {
-        await probe(player, forceFullMetadata: true)
+        await probe(player, probeMode: .fullMetadata)
     }
 }
 
@@ -36,7 +57,7 @@ final class MusicPlaybackClient {
 
     func getCurrentTrack(
         preferredPlayer: MusicPlayer?,
-        forceFullMetadata: Bool = true
+        probeMode: PlaybackProbeMode = .fullMetadata
     ) async -> MusicPlaybackResult {
         let runningPlayers = playerProbe.runningPlayers()
         guard !runningPlayers.isEmpty else {
@@ -52,8 +73,13 @@ final class MusicPlaybackClient {
         var failures: [String] = []
 
         for player in orderedPlayers where runningPlayers.contains(player) {
+            let effectiveMode: PlaybackProbeMode = if player == preferredPlayer {
+                probeMode
+            } else {
+                probeMode.isFullMetadata ? .fullMetadata : .trackAndState
+            }
             let interval = signposter.beginInterval("PlayerProbe")
-            let result = await playerProbe.probe(player, forceFullMetadata: forceFullMetadata)
+            let result = await playerProbe.probe(player, probeMode: effectiveMode)
             signposter.endInterval("PlayerProbe", interval)
 
             switch result {
@@ -105,14 +131,14 @@ final class AppleEventPlayerProbe: MusicPlayerProbing {
         })
     }
 
-    func probe(_ player: MusicPlayer, forceFullMetadata: Bool) async -> TrackProbeResult {
+    func probe(_ player: MusicPlayer, probeMode: PlaybackProbeMode) async -> TrackProbeResult {
         guard let pid = NSRunningApplication.runningApplications(
             withBundleIdentifier: player.bundleIdentifier
         ).first?.processIdentifier else {
             await worker.invalidateCache(for: player)
             return .inactive
         }
-        return await worker.probe(player: player, pid: pid, forceFullMetadata: forceFullMetadata)
+        return await worker.probe(player: player, pid: pid, mode: probeMode)
     }
 }
 
@@ -339,6 +365,12 @@ final class NativeAppleEventQuerySender: AppleEventQuerySending, @unchecked Send
 }
 
 final class AppleEventProbeWorker: @unchecked Sendable {
+    private enum PositionFastPathPolicy {
+        static let maxDriftMs = 1_000
+        static let stallElapsedThresholdMs = 1_100
+        static let endOfTrackGuardMs = 1_500
+    }
+
     private struct CachedTrack {
         let pid: pid_t
         let rawTrackKey: String
@@ -365,7 +397,19 @@ final class AppleEventProbeWorker: @unchecked Sendable {
     func probe(
         player: MusicPlayer,
         pid: pid_t,
-        forceFullMetadata: Bool = true
+        forceFullMetadata: Bool
+    ) async -> TrackProbeResult {
+        await probe(
+            player: player,
+            pid: pid,
+            mode: forceFullMetadata ? .fullMetadata : .trackAndState
+        )
+    }
+
+    func probe(
+        player: MusicPlayer,
+        pid: pid_t,
+        mode: PlaybackProbeMode = .fullMetadata
     ) async -> TrackProbeResult {
         await withCheckedContinuation { continuation in
             queue.async { [self] in
@@ -373,7 +417,7 @@ final class AppleEventProbeWorker: @unchecked Sendable {
                     returning: probeSync(
                         player: player,
                         pid: pid,
-                        forceFullMetadata: forceFullMetadata
+                        mode: mode
                     )
                 )
             }
@@ -383,8 +427,58 @@ final class AppleEventProbeWorker: @unchecked Sendable {
     private func probeSync(
         player: MusicPlayer,
         pid: pid_t,
-        forceFullMetadata: Bool
+        mode: PlaybackProbeMode
     ) -> TrackProbeResult {
+        var prefetchedProgressMs: Int?
+
+        if case let .positionOnly(expectedProgressMs) = mode,
+            let cached = cache[player],
+            cached.pid == pid,
+            cached.track.isPlaying,
+            !cached.rawTrackKey.isEmpty,
+            !cached.track.name.isEmpty,
+            !cached.track.artist.isEmpty,
+            cached.track.itemKind != .unknown
+        {
+            switch optionalDoubleProperty(
+                AppleEventClient.playerPositionProperty,
+                onTrack: false,
+                pid: pid
+            ) {
+            case let .success(positionSeconds):
+                if let positionSeconds {
+                    let progressMs = max(0, Int(positionSeconds * 1_000))
+                    prefetchedProgressMs = progressMs
+                    let driftMs = abs(progressMs - expectedProgressMs)
+                    let expectedAdvanceMs = expectedProgressMs - cached.track.progressMs
+                    let appearsStalled = expectedAdvanceMs >= PositionFastPathPolicy.stallElapsedThresholdMs
+                        && progressMs <= cached.track.progressMs
+                    let nearEndOfTrack = cached.track.durationMs > 0
+                        && progressMs >= max(0, cached.track.durationMs - PositionFastPathPolicy.endOfTrackGuardMs)
+                    if driftMs <= PositionFastPathPolicy.maxDriftMs,
+                        !appearsStalled,
+                        !nearEndOfTrack
+                    {
+                        let refreshed = MusicTrack(
+                            source: cached.track.source,
+                            sourceTrackID: cached.track.sourceTrackID,
+                            itemKind: cached.track.itemKind,
+                            name: cached.track.name,
+                            artist: cached.track.artist,
+                            album: cached.track.album,
+                            durationMs: cached.track.durationMs,
+                            progressMs: progressMs,
+                            isPlaying: true
+                        )
+                        cache[player] = CachedTrack(pid: pid, rawTrackKey: cached.rawTrackKey, track: refreshed)
+                        return .track(refreshed)
+                    }
+                }
+            case let .failure(error):
+                return mapTerminalError(error, player: player)
+            }
+        }
+
         let isPlaying: Bool
         switch sender.getApplicationProperty(AppleEventClient.playerStateProperty, pid: pid) {
         case let .success(descriptor):
@@ -408,15 +502,19 @@ final class AppleEventProbeWorker: @unchecked Sendable {
         }
 
         let progressMs: Int
-        switch optionalDoubleProperty(
-            AppleEventClient.playerPositionProperty,
-            onTrack: false,
-            pid: pid
-        ) {
-        case let .success(positionSeconds):
-            progressMs = max(0, Int((positionSeconds ?? 0) * 1_000))
-        case let .failure(error):
-            return mapTerminalError(error, player: player)
+        if let prefetchedProgressMs {
+            progressMs = prefetchedProgressMs
+        } else {
+            switch optionalDoubleProperty(
+                AppleEventClient.playerPositionProperty,
+                onTrack: false,
+                pid: pid
+            ) {
+            case let .success(positionSeconds):
+                progressMs = max(0, Int((positionSeconds ?? 0) * 1_000))
+            case let .failure(error):
+                return mapTerminalError(error, player: player)
+            }
         }
 
         let trackKeyProperty = player == .spotify
@@ -439,7 +537,7 @@ final class AppleEventProbeWorker: @unchecked Sendable {
             return mapTerminalError(error, player: player)
         }
 
-        if !forceFullMetadata,
+        if !mode.isFullMetadata,
             let cached = cache[player],
             cached.pid == pid,
             !rawTrackKey.isEmpty,
@@ -459,6 +557,7 @@ final class AppleEventProbeWorker: @unchecked Sendable {
                 progressMs: progressMs,
                 isPlaying: isPlaying
             )
+            cache[player] = CachedTrack(pid: pid, rawTrackKey: rawTrackKey, track: refreshed)
             return .track(refreshed)
         }
 

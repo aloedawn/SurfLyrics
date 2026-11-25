@@ -11,8 +11,8 @@ Edit `SurfLyrics/AppIcon.icon` in Icon Composer. It uses editable SVG layers and
 ## Architecture
 
 ### Playback & Scheduling
-- `AppleEventClient` and `AppleEventPlayerProbe` query Spotify and Apple Music directly via `NSAppleEventDescriptor.sendEvent` (no `NSAppleScript` / OSA component loading). Periodic sync polls (`forceFullMetadata: false`) use a 3-property fast path (`pPlS`, `pPos`, track key) when the player PID and track key are unchanged.
-- `AppState` drives lyric line transitions with an in-memory `PlaybackClock` and `lyricTimer` (zero playback IPC between line transitions), while `syncTimer` handles low-frequency drift/seek correction (6s playing with lyrics, 15s paused/stopped/no-lyrics/podcasts).
+- `AppleEventClient` and `AppleEventPlayerProbe` query Spotify and Apple Music directly via `NSAppleEventDescriptor.sendEvent` (no `NSAppleScript` / OSA component loading). Synced playback polls use a 1-property position-only fast path (`pPos`), falling back to the 3-property fast path (`pPlS`, `pPos`, track key) on seek/drift, stall, or near end-of-track, and full metadata on track change or player events.
+- `AppState` drives lyric line transitions with an in-memory `PlaybackClock` and `lyricTimer` (piggybacking a `pPos` check when `>= 1.5s` has elapsed since the last sync), while `syncTimer` handles ceiling drift/seek correction (`2.0s` playing with lyrics, `15s` paused/stopped/no-lyrics/podcasts).
 - When no supported music player is running (`.noRunningPlayers`), `AppState` stops all periodic timers (zero wakeups) and wakes on `NSWorkspace` launch, termination, wake, and `DistributedNotificationCenter` playback events.
 
 ### Lyrics & Connection

@@ -56,8 +56,9 @@ final class AppState: ObservableObject {
     private enum SyncPolicy {
         static let inactiveInterval: TimeInterval = 15.0
         static let inactiveTolerance: TimeInterval = 5.0
-        static let playingSyncedInterval: TimeInterval = 6.0
-        static let playingSyncedTolerance: TimeInterval = 1.0
+        static let playingSyncedInterval: TimeInterval = 2.0
+        static let playingSyncedTolerance: TimeInterval = 0.4
+        static let lyricPiggybackMinInterval: TimeInterval = 1.5
         static let loadingInterval: TimeInterval = 5.0
         static let loadingTolerance: TimeInterval = 1.0
         static let endOfTrackThreshold: TimeInterval = 8.0
@@ -103,7 +104,8 @@ final class AppState: ObservableObject {
     private var currentTrack: MusicTrack?
     private var preferredPlayer: MusicPlayer?
     private var pendingPreferredPlayer: MusicPlayer?
-    private var pendingForceFullMetadata = false
+    private var pendingProbeMode: PlaybackProbeMode?
+    private var lastSyncUptime: TimeInterval?
     private var isRefreshInFlight = false
     private var needsTrailingRefresh = false
     private var isShuttingDown = false
@@ -133,7 +135,7 @@ final class AppState: ObservableObject {
         observePlaybackChanges()
         observeSettingsChanges()
         observeWorkspaceChanges()
-        requestPlaybackRefresh(forceFullMetadata: true)
+        requestPlaybackRefresh(probeMode: .fullMetadata)
     }
 
     private func observePlaybackChanges() {
@@ -145,7 +147,7 @@ final class AppState: ObservableObject {
                     queue: .main
                 ) { [weak self] _ in
                     Task { @MainActor [weak self] in
-                        self?.requestPlaybackRefresh(preferredPlayer: player, forceFullMetadata: true)
+                        self?.requestPlaybackRefresh(preferredPlayer: player, probeMode: .fullMetadata)
                     }
                 }
                 distributedObservers.append(observer)
@@ -193,7 +195,7 @@ final class AppState: ObservableObject {
                 guard let self, let bundleID,
                     let player = MusicPlayer.allCases.first(where: { $0.bundleIdentifier == bundleID })
                 else { return }
-                self.requestPlaybackRefresh(preferredPlayer: player, forceFullMetadata: true)
+                self.requestPlaybackRefresh(preferredPlayer: player, probeMode: .fullMetadata)
             }
         }
         workspaceObservers.append(launchObserver)
@@ -213,7 +215,7 @@ final class AppState: ObservableObject {
                     self.onSpotifyTerminated()
                     self.musicManager.invalidateSpotifyEndpoint()
                 }
-                self.requestPlaybackRefresh(forceFullMetadata: true)
+                self.requestPlaybackRefresh(probeMode: .fullMetadata)
             }
         }
         workspaceObservers.append(terminateObserver)
@@ -224,7 +226,7 @@ final class AppState: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.requestPlaybackRefresh(forceFullMetadata: true)
+                self?.requestPlaybackRefresh(probeMode: .fullMetadata)
             }
         }
         workspaceObservers.append(wakeObserver)
@@ -232,14 +234,14 @@ final class AppState: ObservableObject {
 
     func requestPlaybackRefresh(
         preferredPlayer: MusicPlayer? = nil,
-        forceFullMetadata: Bool = true
+        probeMode: PlaybackProbeMode = .fullMetadata
     ) {
         guard !isShuttingDown else { return }
         if let preferredPlayer {
             cancelSyncTimer()
             pendingPreferredPlayer = preferredPlayer
         }
-        pendingForceFullMetadata = pendingForceFullMetadata || forceFullMetadata
+        pendingProbeMode = pendingProbeMode?.merged(with: probeMode) ?? probeMode
 
         guard !isRefreshInFlight else {
             needsTrailingRefresh = true
@@ -249,13 +251,13 @@ final class AppState: ObservableObject {
         isRefreshInFlight = true
         let musicManager = musicManager
         let requestedPlayer = pendingPreferredPlayer ?? self.preferredPlayer
-        let requestedFullMetadata = pendingForceFullMetadata
+        let requestedProbeMode = pendingProbeMode ?? .fullMetadata
         pendingPreferredPlayer = nil
-        pendingForceFullMetadata = false
+        pendingProbeMode = nil
         refreshTask = Task { [weak self] in
             let result = await musicManager.getCurrentTrack(
                 preferredPlayer: requestedPlayer,
-                forceFullMetadata: requestedFullMetadata
+                probeMode: requestedProbeMode
             )
             guard let self else { return }
             finishPlaybackRefresh(result, wasCancelled: Task.isCancelled)
@@ -272,7 +274,7 @@ final class AppState: ObservableObject {
 
         if needsTrailingRefresh, !isShuttingDown {
             needsTrailingRefresh = false
-            requestPlaybackRefresh(forceFullMetadata: pendingForceFullMetadata)
+            requestPlaybackRefresh(probeMode: pendingProbeMode ?? .trackAndState)
         }
     }
 
@@ -291,6 +293,7 @@ final class AppState: ObservableObject {
     private func handleUnavailablePlayback(_ issue: MusicPlaybackIssue?) {
         cancelLyricTimer()
         playbackClock = nil
+        lastSyncUptime = nil
         resetLyrics(for: nil)
         currentTrack = nil
 
@@ -311,10 +314,12 @@ final class AppState: ObservableObject {
     }
 
     private func handlePlaying(_ track: MusicTrack) {
+        let now = monotonicTime()
+        lastSyncUptime = now
         playbackClock = PlaybackClock(
             trackID: track.identity,
             anchorProgressMs: track.progressMs,
-            anchorUptime: monotonicTime(),
+            anchorUptime: now,
             durationMs: track.durationMs
         )
 
@@ -346,6 +351,7 @@ final class AppState: ObservableObject {
     private func handlePaused(_ track: MusicTrack) {
         cancelLyricTimer()
         playbackClock = nil
+        lastSyncUptime = nil
 
         let id = track.identity
         if id != currentTrackId {
@@ -497,6 +503,37 @@ final class AppState: ObservableObject {
         let progressMs = resolvedProgressMs(for: track)
         updateDisplay(for: track, progressMs: progressMs, force: false)
         scheduleLyricTimer(for: track, progressMs: progressMs)
+        piggybackPositionSyncIfNeeded(for: track, progressMs: progressMs)
+    }
+
+    private func piggybackPositionSyncIfNeeded(for track: MusicTrack, progressMs: Int) {
+        guard !isRefreshInFlight,
+            let lastSyncUptime,
+            monotonicTime() - lastSyncUptime >= SyncPolicy.lyricPiggybackMinInterval
+        else {
+            return
+        }
+        cancelSyncTimer()
+        requestPlaybackRefresh(probeMode: syncProbeMode(for: track, progressMs: progressMs))
+    }
+
+    private func syncProbeMode(for track: MusicTrack, progressMs: Int) -> PlaybackProbeMode {
+        guard track.isPlaying,
+            !lyricsState.isLoading,
+            lyricsState.lyrics != nil,
+            let playbackClock,
+            playbackClock.trackID == track.identity
+        else {
+            return .trackAndState
+        }
+
+        if track.durationMs > 0 {
+            let remaining = Double(max(0, track.durationMs - progressMs)) / 1_000.0
+            if remaining < SyncPolicy.endOfTrackThreshold {
+                return .trackAndState
+            }
+        }
+        return .positionOnly(expectedProgressMs: progressMs)
     }
 
     private func cancelLyricTimer() {
@@ -571,7 +608,12 @@ final class AppState: ObservableObject {
     private func handleSyncTimer(generation: UInt) {
         guard !isShuttingDown, generation == syncTimerGeneration else { return }
         cancelSyncTimer()
-        requestPlaybackRefresh(forceFullMetadata: false)
+        if let track = currentTrack {
+            let progressMs = resolvedProgressMs(for: track)
+            requestPlaybackRefresh(probeMode: syncProbeMode(for: track, progressMs: progressMs))
+        } else {
+            requestPlaybackRefresh(probeMode: .trackAndState)
+        }
     }
 
     private func cancelSyncTimer() {
@@ -623,6 +665,7 @@ final class AppState: ObservableObject {
         cancelLyricTimer()
         cancelSyncTimer()
         playbackClock = nil
+        lastSyncUptime = nil
         refreshTask?.cancel()
         lyricsTask?.cancel()
         refreshTask = nil
